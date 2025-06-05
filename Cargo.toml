@@ -1,0 +1,10 @@
+[package]
+name = "bytechess"
+version = "0.1.0"
+description = "A lightweight Rust chess engine."
+license = "MIT"
+autobins = false
+
+[[bin]]
+name = "bytechess"
+path = "src/byte.rs"

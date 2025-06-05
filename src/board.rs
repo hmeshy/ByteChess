@@ -1,51 +1,48 @@
 use crate::util;
+use crate::util::{Color,Move,MoveFlag};
 
+// Enum for bitboard piece tables
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum enumPiece {
-    bWhite,
-    bBlack,
-    bPawn,
-    bKnight,
-    bBishop,
-    bRook,
-    bQueen,
-    bKing,
-}
-// squares, move color, castling rights, en passant square, halfmove clock (50 move rule), fullmove number
-pub struct Board {
-    bitboards: [U64; 8],
-    move_color: Color,
-    castling_rights: [bool; 4], // [White King, White Queen, Black King, Black Queen]
-    en_passant: Option<usize>,
-    halfmove_clock: u8,
-    fullmove_number: u16,
-}
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum MoveFlag {
-    Quiet = 0,
-    DoublePush = 1,
-    KingCastle = 2,
-    QueenCastle = 3,
-    Capture = 4,
-    EnPassant = 5,
-    KnightPromotion = 8,
-    BishopPromotion = 9,
-    RookPromotion = 10,
-    QueenPromotion = 11,
-    KnightPromoCapture = 12,
-    BishopPromoCapture = 13,
-    RookPromoCapture = 14,
-    QueenPromoCapture = 15,
-}
-// ...existing code...
-pub struct Move {
-    Move(u8 m_from, u8 m_to, u8 flags) {
-      info = ((flags & 0xf)<<12) | ((m_from & 0x3f)<<6) | (m_to & 0x3f);
-   }
-    info: u16, // 6 bits for from and to, 4 bits for extra info (promotion, capture, en passant, castling)
+pub enum BBPiece {
+    White,
+    Black,
+    Pawn,
+    Knight,
+    Bishop,
+    Rook,
+    Queen,
+    King,
 }
 
+// Board structure
+pub struct Board {
+    pub bitboards: [u64; 8], //8 bitboards, accessed via the enum
+    pub move_color: Color,
+    pub castling_rights: [bool; 4], // [White King, White Queen, Black King, Black Queen]
+    pub en_passant: Option<usize>,
+    pub halfmove_clock: u8,
+    pub fullmove_number: u16,
+}
+
+pub const STARTING_POSITION: Board = Board {
+    bitboards: [
+        0x000000000000FFFF, // White Pieces
+        0xFFFF000000000000, // Black Pieces
+        0x00FF00000000FF00, // Pawns
+        0x4200000000000042, // Knights
+        0x2400000000000024, // Bishops
+        0x8100000000000081, // Rooks
+        0x0800000000000008, // Queens
+        0x1000000000000010, // Kings
+    ],
+    move_color: Color::White,
+    castling_rights: [true, true, true, true],
+    en_passant: None,
+    halfmove_clock: 0,
+    fullmove_number: 1,
+};
+
+//Move tags
 pub enum Tags {
     QuietMove,
     DoublePush,
@@ -55,133 +52,87 @@ pub enum Tags {
     EnPassant,
 
 }
-// Print function for Board
-impl std::fmt::Display for Board {
-    // Prints in FEN format
-    // Helper function to get FEN piece char for a given piece and color
-    fn piece_to_fen(piece: enumPiece, color: Color) -> char {
-            match (piece, color) {
-                (enumPiece::bPawn, Color::White) => 'P',
-                (enumPiece::bKnight, Color::White) => 'N',
-                (enumPiece::bBishop, Color::White) => 'B',
-                (enumPiece::bRook, Color::White) => 'R',
-                (enumPiece::bQueen, Color::White) => 'Q',
-                (enumPiece::bKing, Color::White) => 'K',
-                (enumPiece::bPawn, Color::Black) => 'p',
-                (enumPiece::bKnight, Color::Black) => 'n',
-                (enumPiece::bBishop, Color::Black) => 'b',
-                (enumPiece::bRook, Color::Black) => 'r',
-                (enumPiece::bQueen, Color::Black) => 'q',
-                (enumPiece::bKing, Color::Black) => 'k',
-                _ => ' ',
-            }
-        }
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Piece placement
-        // To be implemented using the bitboards
-        // Returns the FEN piece placement string for the board
-        let mut fen = String::new();
-        for rank in (0..8).rev() {
-            let mut empty = 0;
-            for file in 0..8 {
-                let sq = rank * 8 + file;
-                let mut found = false;
-                for (i, &bb) in board.bitboards.iter().enumerate() {
-                    if i == enumPiece::bWhite as usize || i == enumPiece::bBlack as usize {
-                        continue; // skip color bitboards
-                    }
-                    if (bb >> sq) & 1 == 1 {
-                        // Determine color
-                        let color = if (board.bitboards[enumPiece::bWhite as usize] >> sq) & 1 == 1 {
-                            Color::White
-                        } else {
-                            Color::Black
-                        };
-                        let piece = piece_to_fen(enumPiece::from(i), color);
-                        if empty > 0 {
-                            fen.push_str(&empty.to_string());
-                            empty = 0;
-                        }
-                        fen.push(piece);
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
-                    empty += 1;
-                }
-            }
-            if empty > 0 {
-                fen.push_str(&empty.to_string());
-            }
-            if rank != 0 {
-                fen.push('/');
-            }
-        }        
-        // Helper to convert usize to enumPiece
-        impl enumPiece {
-            fn from(idx: usize) -> Self {
-                match idx {
-                    2 => enumPiece::bPawn,
-                    3 => enumPiece::bKnight,
-                    4 => enumPiece::bBishop,
-                    5 => enumPiece::bRook,
-                    6 => enumPiece::bQueen,
-                    7 => enumPiece::bKing,
-                    _ => panic!("Invalid piece index"),
-                }
-            }
-        }
-        // Active color
-        write!(
-            f,
-            " {}",
-            match self.move_color {
-            Color::White => "w",
-            Color::Black => "b",
-            Color::None => "-", // Should not happen
-            }
-        )?;
-
-        // Castling rights
-        let mut castling = String::new();
-        if self.castling_rights[0] { castling.push('K'); }
-        if self.castling_rights[1] { castling.push('Q'); }
-        if self.castling_rights[2] { castling.push('k'); }
-        if self.castling_rights[3] { castling.push('q'); }
-        if castling.is_empty() {
-            castling.push('-');
-        }
-        write!(f, " {}", castling)?;
-
-        // En passant target square
-        let en_passant = if let Some(idx) = self.en_passant {
-            util::idx_to_sq(idx)
-        } else {
-            "-".to_string()
-        };
-        write!(f, " {}", en_passant)?;
-
-        // Halfmove clock and fullmove number
-        write!(f, " {} {}", self.halfmove_clock, self.fullmove_number)?;
-
-        Ok(())
-    }
-}
 
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
 // assumes that a move is legal
-pub fn make_move(board: &mut Board, move: & Move) -> Result<(), String> {
-    let from_index = //from part of move;
-    let to_index = //to part of move;;
+pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
+    let from_index = _move.from_square();
+    let to_index = _move.to_square();
+    let flags = _move.flags();
 
-    if board.squares[from_index]._type == PieceType::None {
-        return Err(format!("No piece at {}", from));
+    // Check if castling eligibility has changed
+    // Check which piece has moved
+    if board.bitboards[BBPiece::King as usize] & (1 << from_index) != 0 {
+        // King moved, update castling rights
+        if board.move_color == Color::White {
+            board.castling_rights[0] = false; // White King-side
+            board.castling_rights[1] = false; // White Queen-side
+        } else {
+            board.castling_rights[2] = false; // Black King-side
+            board.castling_rights[3] = false; // Black Queen-side
+        }
+    } else if board.bitboards[BBPiece::Rook as usize] & (1 << from_index) != 0 {
+        // Rook moved, update castling rights
+        if board.move_color == Color::White {
+            if from_index == util::sq_to_idx("a1") as u8 {
+                board.castling_rights[1] = false; // White Queen-side
+            } else if from_index == util::sq_to_idx("h1") as u8 {
+                board.castling_rights[0] = false; // White King-side
+            }
+        } else {
+            if from_index == util::sq_to_idx("a8") as u8 {
+                board.castling_rights[3] = false; // Black Queen-side
+            } else if from_index == util::sq_to_idx("h8") as u8 {
+                board.castling_rights[2] = false; // Black King-side
+            }
+        }
     }
-
-    // Move the piece
-    board.squares[to_index] = board.squares[from_index];
-    board.squares[from_index] = Piece { _type: PieceType::None, color: Color::None };
+    
+    // Zero the from_index and replace the to_index in every bitboard
+    for i in 0..8 {
+        // Set the to square to the value of the from square
+        if board.bitboards[i] & (1 << from_index) != 0 {
+            board.bitboards[i] &= !(1 << from_index); // Clear the from square
+            board.bitboards[i] |= 1 << to_index; // Set the to square
+        } else if board.bitboards[i] & (1 << to_index) != 0 {
+            // We are capturing from a different bitboard, clear the to square
+            board.bitboards[i] &= !(1 << to_index);
+        }
+    }
+    if flags & 0x8 != 0 { // Pawn Promotion
+        match (flags & 0x3) { // Get Promotion Piece
+            0 => board.bitboards[BBPiece::Knight as usize] |= 1 << to_index, // Promote to Queen
+            1 => board.bitboards[BBPiece::Bishop as usize] |= 1 << to_index, // Promote to Rook
+            2 => board.bitboards[BBPiece::Rook as usize] |= 1 << to_index, // Promote to Bishop
+            3 => board.bitboards[BBPiece::Queen as usize] |= 1 << to_index, // Promote to Knight
+            _ => return Err("Invalid promotion type".to_string()),
+        }
+        board.bitboards[BBPiece::Pawn as usize] &= !(1 << from_index); // Remove the pawn from the board
+    }
+    if flags == MoveFlag::EnPassant as u8 { // En passant
+        // Clear the captured pawn
+        let captured_pawn_index = if board.move_color == Color::White {
+            to_index + 8 // Captured pawn is one rank below
+        } else {
+            to_index - 8 // Captured pawn is one rank above
+        };
+        board.bitboards[BBPiece::Pawn as usize] &= !(1 << captured_pawn_index);
+    }
+    if flags & 0x2 != 0 && flags & 0xC == 0 { // Castling
+        if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("g1") as u8 { // White King-side castle
+            board.bitboards[BBPiece::Rook as usize] &= !(1 << util::sq_to_idx("h1")); // Clear the rook
+            board.bitboards[BBPiece::Rook as usize] |= 1 << util::sq_to_idx("f1"); // Move the rook to f1
+        } else if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("c1") as u8 { // White Queen-side castle
+            board.bitboards[BBPiece::Rook as usize] &= !(1 << util::sq_to_idx("a1")); // Clear the rook
+            board.bitboards[BBPiece::Rook as usize] |= 1 << util::sq_to_idx("d1"); // Move the rook to d1
+        } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("g8") as u8 { // Black King-side castle
+            board.bitboards[BBPiece::Rook as usize] &= !(1 << util::sq_to_idx("h8")); // Clear the rook
+            board.bitboards[BBPiece::Rook as usize] |= 1 << util::sq_to_idx("f8"); // Move the rook to f8
+        } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("c8") as u8 { // Black Queen-side castle
+            board.bitboards[BBPiece::Rook as usize] &= !(1 << util::sq_to_idx("a8")); // Clear the rook
+            board.bitboards[BBPiece::Rook as usize] |= 1 << util::sq_to_idx("d8"); // Move the rook to d8
+        }
+    }
 
     // Update other board state information
     board.move_color = if board.move_color == Color::White { Color::Black } else { Color::White };
@@ -190,22 +141,4 @@ pub fn make_move(board: &mut Board, move: & Move) -> Result<(), String> {
 
     Ok(())
 }
-
-// MOVE GENERATION
-const JUMP_OFFSETS = [
-    [(1,0)], // Pawn
-    [(-1,2),(-2,1),(1,2),(2,1),(-1,-2),(-2,-1),(1,-2),(2,-1)], // Knight
-    [], //Bishop
-    [], // Rook
-    [], // Queen
-    [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)], // King
-]
-const SLIDE_OFFSETS = [
-    [], // Pawn
-    [], // Knight
-    [(-1,-1),(-1,1),(1,-1),(1,1)], // Bishop
-    [(-1,0),(0,-1),(0,1),(1,0)], // Rook
-    [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)], // Queen
-    [], // King
-]
 // Note: We will use a PSEUDOLEGAL move generator and check legality later
