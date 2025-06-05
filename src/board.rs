@@ -1,80 +1,137 @@
 use crate::util;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum Color {
-    White = 1,
-    Black = -1,
-    None = 0,
+pub enum enumPiece {
+    bWhite,
+    bBlack,
+    bPawn,
+    bKnight,
+    bBishop,
+    bRook,
+    bQueen,
+    bKing,
 }
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum PieceType {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
-    None
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub struct Piece {
-    _type: PieceType,
-    color: Color,
-}
-
 // squares, move color, castling rights, en passant square, halfmove clock (50 move rule), fullmove number
 pub struct Board {
-    squares: [Piece; 64],
+    bitboards: [U64; 8],
     move_color: Color,
     castling_rights: [bool; 4], // [White King, White Queen, Black King, Black Queen]
     en_passant: Option<usize>,
     halfmove_clock: u8,
     fullmove_number: u16,
 }
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MoveFlag {
+    Quiet = 0,
+    DoublePush = 1,
+    KingCastle = 2,
+    QueenCastle = 3,
+    Capture = 4,
+    EnPassant = 5,
+    KnightPromotion = 8,
+    BishopPromotion = 9,
+    RookPromotion = 10,
+    QueenPromotion = 11,
+    KnightPromoCapture = 12,
+    BishopPromoCapture = 13,
+    RookPromoCapture = 14,
+    QueenPromoCapture = 15,
+}
+// ...existing code...
+pub struct Move {
+    Move(u8 m_from, u8 m_to, u8 flags) {
+      info = ((flags & 0xf)<<12) | ((m_from & 0x3f)<<6) | (m_to & 0x3f);
+   }
+    info: u16, // 6 bits for from and to, 4 bits for extra info (promotion, capture, en passant, castling)
+}
 
+pub enum Tags {
+    QuietMove,
+    DoublePush,
+    KingSideCastle,
+    QueenSideCastle,
+    Capture,
+    EnPassant,
+
+}
 // Print function for Board
 impl std::fmt::Display for Board {
     // Prints in FEN format
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Piece placement
-        for row in (0..8).rev() {
-            let mut empty_count = 0;
-            for col in 0..8 {
-            let piece = &self.squares[row * 8 + col];
-            if piece._type == PieceType::None {
-                empty_count += 1;
-            } else {
-                if empty_count > 0 {
-                write!(f, "{}", empty_count)?;
-                empty_count = 0;
-                }
-                let symbol = match piece._type {
-                PieceType::Pawn => 'P',
-                PieceType::Knight => 'N',
-                PieceType::Bishop => 'B',
-                PieceType::Rook => 'R',
-                PieceType::King => 'K',
-                PieceType::Queen => 'Q',
-                PieceType::None => '.', // Should not happen here
-                };
-                let symbol = match piece.color {
-                Color::White => symbol,
-                Color::Black => symbol.to_ascii_lowercase(),
-                Color::None => '.', // Should not happen here
-                };
-                write!(f, "{}", symbol)?;
-            }
-            }
-            if empty_count > 0 {
-            write!(f, "{}", empty_count)?;
-            }
-            if row != 0 {
-            write!(f, "/")?;
+    // Helper function to get FEN piece char for a given piece and color
+    fn piece_to_fen(piece: enumPiece, color: Color) -> char {
+            match (piece, color) {
+                (enumPiece::bPawn, Color::White) => 'P',
+                (enumPiece::bKnight, Color::White) => 'N',
+                (enumPiece::bBishop, Color::White) => 'B',
+                (enumPiece::bRook, Color::White) => 'R',
+                (enumPiece::bQueen, Color::White) => 'Q',
+                (enumPiece::bKing, Color::White) => 'K',
+                (enumPiece::bPawn, Color::Black) => 'p',
+                (enumPiece::bKnight, Color::Black) => 'n',
+                (enumPiece::bBishop, Color::Black) => 'b',
+                (enumPiece::bRook, Color::Black) => 'r',
+                (enumPiece::bQueen, Color::Black) => 'q',
+                (enumPiece::bKing, Color::Black) => 'k',
+                _ => ' ',
             }
         }
-
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Piece placement
+        // To be implemented using the bitboards
+        // Returns the FEN piece placement string for the board
+        let mut fen = String::new();
+        for rank in (0..8).rev() {
+            let mut empty = 0;
+            for file in 0..8 {
+                let sq = rank * 8 + file;
+                let mut found = false;
+                for (i, &bb) in board.bitboards.iter().enumerate() {
+                    if i == enumPiece::bWhite as usize || i == enumPiece::bBlack as usize {
+                        continue; // skip color bitboards
+                    }
+                    if (bb >> sq) & 1 == 1 {
+                        // Determine color
+                        let color = if (board.bitboards[enumPiece::bWhite as usize] >> sq) & 1 == 1 {
+                            Color::White
+                        } else {
+                            Color::Black
+                        };
+                        let piece = piece_to_fen(enumPiece::from(i), color);
+                        if empty > 0 {
+                            fen.push_str(&empty.to_string());
+                            empty = 0;
+                        }
+                        fen.push(piece);
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    empty += 1;
+                }
+            }
+            if empty > 0 {
+                fen.push_str(&empty.to_string());
+            }
+            if rank != 0 {
+                fen.push('/');
+            }
+        }        
+        // Helper to convert usize to enumPiece
+        impl enumPiece {
+            fn from(idx: usize) -> Self {
+                match idx {
+                    2 => enumPiece::bPawn,
+                    3 => enumPiece::bKnight,
+                    4 => enumPiece::bBishop,
+                    5 => enumPiece::bRook,
+                    6 => enumPiece::bQueen,
+                    7 => enumPiece::bKing,
+                    _ => panic!("Invalid piece index"),
+                }
+            }
+        }
         // Active color
         write!(
             f,
@@ -112,85 +169,11 @@ impl std::fmt::Display for Board {
     }
 }
 
-pub const STARTING_POSITION: Board = Board {
-    squares: [
-        Piece { _type: PieceType::Rook, color: Color::White },
-        Piece { _type: PieceType::Knight, color: Color::White },
-        Piece { _type: PieceType::Bishop, color: Color::White },
-        Piece { _type: PieceType::Queen, color: Color::White },
-        Piece { _type: PieceType::King, color: Color::White },
-        Piece { _type: PieceType::Bishop, color: Color::White },
-        Piece { _type: PieceType::Knight, color: Color::White },
-        Piece { _type: PieceType::Rook, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::Pawn, color: Color::White },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::None, color: Color::None },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Pawn, color: Color::Black },
-        Piece { _type: PieceType::Rook, color: Color::Black },
-        Piece { _type: PieceType::Knight, color: Color::Black },
-        Piece { _type: PieceType::Bishop, color: Color::Black },
-        Piece { _type: PieceType::Queen, color: Color::Black },
-        Piece { _type: PieceType::King, color: Color::Black },
-        Piece { _type: PieceType::Bishop, color: Color::Black },
-        Piece { _type: PieceType::Knight, color: Color::Black },
-        Piece { _type: PieceType::Rook, color: Color::Black }
-    ],
-    move_color: Color::White,
-    castling_rights: [true, true, true, true],
-    en_passant: None,
-    halfmove_clock: 0,
-    fullmove_number: 1,
-};
-
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
 // assumes that a move is legal
-pub fn make_move(board: &mut Board, from: &str, to: &str) -> Result<(), String> {
-    let from_index = util::sq_to_idx(from);
-    let to_index = util::sq_to_idx(to);
+pub fn make_move(board: &mut Board, move: & Move) -> Result<(), String> {
+    let from_index = //from part of move;
+    let to_index = //to part of move;;
 
     if board.squares[from_index]._type == PieceType::None {
         return Err(format!("No piece at {}", from));
