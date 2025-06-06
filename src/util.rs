@@ -177,9 +177,9 @@ impl std::fmt::Display for board::Board {
             f,
             " {}",
             match self.move_color {
-            Color::White => "w",
-            Color::Black => "b",
-            Color::None => "-", // Should not happen
+                1 => "w",
+                -1 => "b",
+                _ => "-", // Should not happen
             }
         )?;
 

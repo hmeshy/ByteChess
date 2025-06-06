@@ -5,6 +5,10 @@ description = "A lightweight Rust chess engine."
 license = "MIT"
 autobins = false
 
+[dependencies]
+strum = "0.27.1"
+strum_macros = "0.27.1"
+
 [[bin]]
 name = "bytechess"
 path = "src/byte.rs"
