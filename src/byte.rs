@@ -1,19 +1,24 @@
+#![allow(unused)]
 mod board;
 mod util;
 
 fn main() {
-    let mut _board = board::STARTING_POSITION;
-    println!("{}",_board);
-    board::make_move(&mut _board, &util::Move::from_parts(util::sq_to_idx("e2") as u8, util::sq_to_idx("e4") as u8, 0));
-    println!("{}",_board);
-    board::make_move(&mut _board, &util::Move::from_parts(util::sq_to_idx("e7") as u8, util::sq_to_idx("e6") as u8, 0));
-    println!("{}", _board);
-    board::make_move(&mut _board, &util::Move::from_parts(util::sq_to_idx("e4") as u8, util::sq_to_idx("e5") as u8, 0));
-    println!("{}", _board);
-    board::make_move(&mut _board, &util::Move::from_parts(util::sq_to_idx("f7") as u8, util::sq_to_idx("f5") as u8, 0));
-    println!("{}", _board);
-    board::make_move(&mut _board, &util::Move::from_parts(util::sq_to_idx("e5") as u8, util::sq_to_idx("f6") as u8, 0));
-    println!("{}", _board);
-    board::make_move(&mut _board, &util::Move::from_parts(util::sq_to_idx("e8") as u8, util::sq_to_idx("f7") as u8, 0));
-    println!("{}", _board);
+    let mut _board = board::Board {
+        bitboards: [
+            0x000000000000FFFF, // White Pieces
+            0xFFFF000000000000, // Black Pieces
+            0x00FF00000000FF00, // Pawns
+            0x4200000000000042, // Knights
+            0x2400000000000024, // Bishops
+            0x8100000000000081, // Rooks
+            0x0800000000000008, // Queens
+            0x1000000000000010, // Kings
+        ],
+        move_color: util::Color::White as i8,
+        castling_rights: [true, true, true, true],
+        en_passant: None,
+        halfmove_clock: 0,
+        fullmove_number: 1,
+    };
+    _board.gen_moves();
 }

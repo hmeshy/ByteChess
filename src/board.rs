@@ -19,6 +19,21 @@ pub enum BBPiece {
     King,
 }
 
+// Helper to convert usize to BBPiece
+impl BBPiece {
+    pub(crate) fn from(idx: usize) -> Self {
+        match idx {
+            2 => BBPiece::Pawn,
+            3 => BBPiece::Knight,
+            4 => BBPiece::Bishop,
+            5 => BBPiece::Rook,
+            6 => BBPiece::Queen,
+            7 => BBPiece::King,
+            _ => panic!("Invalid piece index"),
+        }
+    }
+}
+
 // Board structure
 pub struct Board {
     pub bitboards: [u64; 8], //8 bitboards, accessed via the enum
@@ -35,7 +50,7 @@ impl Board {
     pub fn get(&self, pieces: impl IntoIterator<Item = BBPiece>, square: impl Into<usize>) -> bool {
         let square = square.into();
         for piece in pieces {
-            if self.bitboards[piece as usize] & (1 << square) == 0 {
+            if !util::bb_get(self.bitboards[piece as usize], square) {
                 return false;
             }
         }
@@ -46,11 +61,7 @@ impl Board {
     pub fn set(&mut self, pieces: impl IntoIterator<Item = BBPiece>, square: impl Into<usize>, value: bool) {
         let square = square.into();
         for piece in pieces {
-            if value {
-                self.bitboards[piece as usize] |= 1 << square;
-            } else {
-                self.bitboards[piece as usize] &= !(1 << square);
-            }
+            util::bb_set(&mut self.bitboards[piece as usize], square, value);
         }
     }
 
@@ -62,6 +73,24 @@ impl Board {
             self.set([piece], from, false);
             self.set([piece], to, true);
         }
+    }
+
+    #[inline]
+    pub fn combined(&self, pieces: impl IntoIterator<Item = BBPiece>, exclusive: bool) -> u64 {
+        let mut iter = pieces.into_iter();
+        let mut combined = if let Some(first) = iter.next() {
+            self.bitboards[first as usize]
+        } else {
+            return 0;
+        };
+        for piece in iter {
+            if exclusive {
+            combined &= self.bitboards[piece as usize];
+            } else {
+            combined |= self.bitboards[piece as usize];
+            }
+        }
+        combined
     }
 }
 
@@ -84,7 +113,7 @@ pub const STARTING_POSITION: Board = Board {
 };
 
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
-// assumes that a move is legal
+// assumes that a move is legal, tracks other FEN changes
 pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     let from_index = _move.from_square();
     let to_index = _move.to_square();
@@ -135,7 +164,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     }
     if flags == MoveFlag::EnPassant as u8 { // En passant
         // Clear the captured pawn
-        let captured_pawn_index = to_index + 8 * board.move_color as u8;
+        let captured_pawn_index = to_index - 8 * board.move_color as u8;
         board.set([BBPiece::Pawn, BBPiece::White, BBPiece::Black], captured_pawn_index, false); // Clear the captured pawn
     }
     if flags & 0x2 != 0 && flags & 0xC == 0 { // Castling
@@ -158,7 +187,8 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     
     // Check En Passant square
     if flags == MoveFlag::DoublePush as u8 {
-        board.en_passant = Some((from_index as i8 + 8 * board.move_color) as usize); // Set en passant target square
+        //TODO: Check if en passant is legal in the next move, first
+        board.en_passant = Some((from_index as i8 - 8 * board.move_color) as usize); // Set en passant target square
     } else {
         board.en_passant = None; // Clear en passant target square
     }
@@ -171,4 +201,57 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     }
     Ok(())
 }
-// Note: We will use a PSEUDOLEGAL move generator and check legality later
+
+// Pseudolegal move generator
+impl Board {
+    pub fn gen_moves(&self) -> Vec<Move> {
+        let mut moves = Vec::new();
+        let color_bb: BBPiece = if self.move_color == Color::White as i8 {
+            BBPiece::White
+        } else {
+            BBPiece::Black
+        };
+        for i in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
+            let combined_bb = self.combined([i, color_bb], true);
+            util::bb_print(combined_bb);
+            // for all - generate start/end squares, get proper flag
+            match i {
+                BBPiece::Pawn => {
+                    // Generate pawn moves
+                    // Pushing 
+                    // Single push (check if blocked))
+                    // Double push (check if on inital rank, and if blocked)
+                    // Captures (check if opponent piece diagonal left or right, board wrapping checks)
+                    // En passant (check if en passant can happen))
+                    // Handle promotion if last rank
+                }
+                BBPiece::Knight => {
+                    // Generate knight moves
+                    // Use the geometry of the knight to find all possible moves, filter for moving out of the board
+                }
+                BBPiece::Bishop => {
+                    // Generate bishop moves
+                    // Queen move gen but just diagonals
+                }
+                BBPiece::Rook => {
+                    // Generate rook moves
+                    // Queen move gen but just horizontals
+                }
+                BBPiece::Queen => {
+                    // Generate queen moves
+                    // Queen / slider move generation
+                    // Check all directions (horizontal, vertical, diagonal) until hitting a piece or the edge of the board
+                    // If hitting a piece, check if it's an opponent piece to capture
+                }
+                BBPiece::King => {
+                    // Generate king moves
+                    // Check all adjacent squares (8 directions)
+                    // If the square is empty or occupied by an opponent piece (and not past border), add the move
+                    // If castling rights exist, check if no pieces are in between the king and rook
+                    // we avoid any check logic here, just generate all moves
+                }
+            }
+        }
+        moves
+    }
+}

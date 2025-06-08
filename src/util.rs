@@ -76,7 +76,7 @@ impl Move {
 }
 
 // Converts a position to an integer index ("a1" --> 0, "h8" --> 63)
-pub fn sq_to_idx(pos: &str) -> usize {
+pub(crate) fn sq_to_idx(pos: &str) -> usize {
     let mut chars = pos.chars();
     let col = chars.next().unwrap() as usize - 'a' as usize;
     let row = chars.next().unwrap() as usize - '1' as usize;
@@ -84,14 +84,14 @@ pub fn sq_to_idx(pos: &str) -> usize {
 }
 
 // And vice versa
-pub fn idx_to_sq(idx: usize) -> String {
+pub(crate) fn idx_to_sq(idx: usize) -> String {
     let row = idx / 8;
     let col = idx % 8;
     format!("{}{}", (col as u8 + 'a' as u8) as char, (row as u8 + '1' as u8) as char)
 }
 
 // Helper function to get FEN piece char for a given piece and color
-pub fn piece_to_fen(piece: BBPiece, color: Color) -> char {
+pub(crate) fn piece_to_fen(piece: BBPiece, color: Color) -> char {
     match (piece, color) {
         (BBPiece::Pawn, Color::White) => 'P',
         (BBPiece::Knight, Color::White) => 'N',
@@ -157,21 +157,7 @@ impl std::fmt::Display for board::Board {
                 fen.push('/');
             }
         }
-        write!(f, "{}", fen)?;        
-        // Helper to convert usize to BBPiece
-        impl BBPiece {
-            fn from(idx: usize) -> Self {
-                match idx {
-                    2 => BBPiece::Pawn,
-                    3 => BBPiece::Knight,
-                    4 => BBPiece::Bishop,
-                    5 => BBPiece::Rook,
-                    6 => BBPiece::Queen,
-                    7 => BBPiece::King,
-                    _ => panic!("Invalid piece index"),
-                }
-            }
-        }
+        write!(f, "{}", fen)?;
         // Active color
         write!(
             f,
@@ -207,4 +193,37 @@ impl std::fmt::Display for board::Board {
 
         Ok(())
     }
+}
+
+// Bitboard util functions
+#[inline]
+pub(crate) fn bb_get(bb: u64, square: usize) -> bool {
+    (bb & (1 << square)) != 0
+}
+#[inline]
+pub(crate) fn bb_set(bb: &mut u64, square: usize, value: bool) {
+    if value {
+        *bb |= 1 << square;
+    } else {
+        *bb &= !(1 << square);
+    }
+}
+#[inline]
+pub(crate) fn bb_print(bb: u64) -> () {
+    let mut result = String::new();
+    for rank in (0..8).rev() {
+        for file in 0..8 {
+            let i = rank * 8 + file;
+            if bb_get(bb, i) {
+                result.push('1');
+            } else {
+                result.push('0');
+            }
+            if file != 7 {
+                result.push(' ');
+            }
+        }
+        result.push('\n');
+    }
+    print!("{}", result);
 }
