@@ -37,6 +37,7 @@ impl BBPiece {
 }
 
 // Board structure
+#[derive(Clone)]
 pub struct Board {
     pub bitboards: [u64; 8], //8 bitboards, accessed via the enum
     pub move_color: i8, // 1 for White, -1 for Black
@@ -555,8 +556,9 @@ impl Board {
             }
             // Up-Left moves
             for i in 1..8 {
+                if file < i { break; } // Out of bounds
                 let target_idx = (rank + i) * 8 + (file - i);
-                if target_idx >= 64 || file < i { break; } // Out of bounds
+                if target_idx >= 64 { break; } // Out of bounds
                 if util::bb_get(blockers, target_idx) {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
@@ -571,8 +573,9 @@ impl Board {
             if rank > 0 {
                 // Down-Right moves
                 for i in 1..8 {
+                    if rank < i { break; } // Out of bounds
                     let target_idx = (rank - i) * 8 + (file + i);
-                    if rank < i || (file + i) >= 8 || target_idx >= 64 { break; } // Out of bounds
+                    if (file + i) >= 8 || target_idx >= 64 { break; } // Out of bounds
                     if util::bb_get(blockers, target_idx) {
                         // Blocked by a piece
                         if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
@@ -586,8 +589,8 @@ impl Board {
                 }
                 // Down-Left moves
                 for i in 1..8 {
+                    if file < i || rank < i { break; } // Out of bounds
                     let target_idx = (rank - i) * 8 + (file - i);
-                    if rank < i || file < i { break; } // Out of bounds
                     if util::bb_get(blockers, target_idx) {
                         // Blocked by a piece
                         if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
