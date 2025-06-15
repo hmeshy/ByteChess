@@ -1,6 +1,8 @@
 extern crate strum;
 extern crate strum_macros;
 
+use std::u8::MAX;
+
 use crate::util;
 use crate::util::{Color,Move,MoveFlag};
 use self::strum_macros::EnumIter;
@@ -219,7 +221,6 @@ impl Board {
                 BBPiece::Pawn => {
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        println!("Pawn at square: {}", util::idx_to_sq(_square));
                         // Generate pawn moves
                         let mut _moves: Vec<Move> = Vec::new();
                         // Pushing 
@@ -336,34 +337,268 @@ impl Board {
                 BBPiece::Knight => {
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        println!("Knight at square: {}", util::idx_to_sq(_square));
                         // Generate knight moves
-                        // Use the geometry of the knight to find all possible moves, filter for moving out of the board
+                        // Knight moves are L-shaped, 2 squares in one direction and 1 square perpendicular
+                        let knight_moves = [
+                            // Only include moves that are within 0..=63
+                            if _square + 17 < 64 { Some((_square + 17) as u8) } else { None }, // Up2-Right1
+                            if _square + 15 < 64 { Some((_square + 15) as u8) } else { None }, // Up2-Left1
+                            if _square >= 17     { Some((_square - 17) as u8) } else { None }, // Down2-Left1
+                            if _square >= 15     { Some((_square - 15) as u8) } else { None }, // Down2-Right1
+                            if _square + 10 < 64 { Some((_square + 10) as u8) } else { None }, // Right2-Up1
+                            if _square + 6  < 64 { Some((_square + 6)  as u8) } else { None }, // Left2-Up1
+                            if _square >= 10     { Some((_square - 10) as u8) } else { None }, // Left2-Down1
+                            if _square >= 6      { Some((_square - 6)  as u8) } else { None }, // Right2-Down1
+                        ];
+                        for &maybe_move_square in knight_moves.iter() {
+                            if let(Some(move_square)) = maybe_move_square {
+                                // Check if the square is empty or occupied by an opponent piece
+                                // and not past border
+                                if !util::bb_get(self.bitboards[color_bb as usize], move_square as usize) {
+                                    // Check "wrapping"
+                                    let rank_d = std::cmp::max(_square/8, (move_square / 8) as usize) - std::cmp::min(_square/8, (move_square / 8) as usize);
+                                    let file_d = std::cmp::max(_square%8, (move_square % 8) as usize) - std::cmp::min(_square%8, (move_square % 8) as usize);
+                                    if rank_d + file_d == 3 {
+                                    // If the square is empty or occupied by an opponent piece
+                                    let mut flags = MoveFlag::Quiet as u8;
+                                    if util::bb_get(self.bitboards[1-(color_bb as usize)], move_square as usize) {
+                                        flags = MoveFlag::Capture as u8; // Capture if opponent piece
+                                    }
+                                    moves.push(Move::from_parts(
+                                        _square as u8,
+                                        move_square,
+                                        flags,
+                                    ));}
+                                }
+                            }
+                        }
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
                 BBPiece::Bishop => {
                     // Generate bishop moves
                     // Queen move gen but just diagonals
+                    let mut _square = util::bb_gs_low_bit(&mut pc_bb);
+                    while _square != 64 {
+                        let _moves = self.gen_sliding_moves(_square as usize, false, true);
+                        for _move in _moves.iter() { moves.push(_move.clone());}
+                        _square = util::bb_gs_low_bit(&mut pc_bb);
+                    }
                 }
                 BBPiece::Rook => {
                     // Generate rook moves
                     // Queen move gen but just horizontals
+                    let mut _square = util::bb_gs_low_bit(&mut pc_bb);
+                    while _square != 64 {
+                        let _moves: Vec<Move> = self.gen_sliding_moves(_square as usize, true, false);
+                        for _move in _moves.iter() { moves.push(_move.clone());}
+                        _square = util::bb_gs_low_bit(&mut pc_bb);
+                    }
                 }
                 BBPiece::Queen => {
                     // Generate queen moves
                     // Queen / slider move generation
                     // Check all directions (horizontal, vertical, diagonal) until hitting a piece or the edge of the board
                     // If hitting a piece, check if it's an opponent piece to capture
+                    let mut _square = util::bb_gs_low_bit(&mut pc_bb);
+                    while _square != 64 {
+                        let _moves: Vec<Move> = self.gen_sliding_moves(_square as usize, true, true);
+                        for _move in _moves.iter() { moves.push(_move.clone());}
+                        _square = util::bb_gs_low_bit(&mut pc_bb);
+                    }
                 }
                 BBPiece::King => {
                     // Generate king moves
-                    // Check all adjacent squares (8 directions)
-                    // If the square is empty or occupied by an opponent piece (and not past border), add the move
-                    // If castling rights exist, check if no pieces are in between the king and rook
-                    // we avoid any check logic here, just generate all moves
+                    let mut _square = util::bb_gs_low_bit(&mut pc_bb);
+                    while _square != 64 {
+                        // Check all adjacent squares (8 directions)
+                        let king_moves = [
+                            // Only include moves that are within 0..=63
+                            if _square + 8 < 64 { Some((_square + 8) as u8) } else { None }, // Up
+                            if _square >= 8     { Some((_square - 8) as u8) } else { None }, // Down
+                            if _square % 8 != 0 { Some((_square - 1) as u8) } else { None }, // Left
+                            if (_square + 1) % 8 != 0 { Some((_square + 1) as u8) } else { None }, // Right
+                            if _square + 9 < 64 && (_square % 8 != 7) { Some((_square + 9) as u8) } else { None }, // Up-Right
+                            if _square + 7 < 64 && (_square % 8 != 0) { Some((_square + 7) as u8) } else { None }, // Up-Left
+                            if _square >= 9 && (_square % 8 != 7) { Some((_square - 9) as u8) } else { None }, // Down-Right
+                            if _square >= 7 && (_square % 8 != 0) { Some((_square - 7) as u8) } else { None }, // Down-Left
+                        ];
+                        for &maybe_move_square in king_moves.iter() {
+                            if let(Some(move_square)) = maybe_move_square {
+                                // If the square is empty or occupied by an opponent piece (and not past border), add the move
+                                // Check if the square is empty or occupied by an opponent piece
+                                if !util::bb_get(self.bitboards[color_bb as usize], move_square as usize) {
+                                    let mut flags = MoveFlag::Quiet as u8;
+                                    if util::bb_get(self.bitboards[1-(color_bb as usize)], move_square as usize) {
+                                        flags = MoveFlag::Capture as u8; // Capture if opponent piece
+                                    }
+                                    moves.push(Move::from_parts(
+                                        _square as u8,
+                                        move_square,
+                                        flags,
+                                    ));
+                                }
+                            }
+                        }
+                        // If castling rights exist, check if no pieces are in between the king and rook
+                        if self.move_color == Color::White as i8 {
+                            if self.castling_rights[0] && _square == util::sq_to_idx("e1") as usize && !util::bb_get(combined_bb, util::sq_to_idx("f1")) && !util::bb_get(combined_bb, util::sq_to_idx("g1")) {
+                                // King-side castle
+                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("g1") as u8, MoveFlag::KingCastle as u8));
+                            }
+                            if self.castling_rights[1] && _square == util::sq_to_idx("e1") as usize && !util::bb_get(combined_bb, util::sq_to_idx("d1")) && !util::bb_get(combined_bb, util::sq_to_idx("c1")) && !util::bb_get(combined_bb, util::sq_to_idx("b1")) {
+                                // Queen-side castle
+                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("c1") as u8, MoveFlag::QueenCastle as u8));
+                            }
+                        } else {
+                            if self.castling_rights[2] && _square == util::sq_to_idx("e8") as usize && !util::bb_get(combined_bb, util::sq_to_idx("f8")) && !util::bb_get(combined_bb, util::sq_to_idx("g8")) {
+                                // King-side castle
+                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("g8") as u8, MoveFlag::KingCastle as u8));
+                            }
+                            if self.castling_rights[3] && _square == util::sq_to_idx("e8") as usize && !util::bb_get(combined_bb, util::sq_to_idx("d8")) && !util::bb_get(combined_bb, util::sq_to_idx("c8")) && !util::bb_get(combined_bb, util::sq_to_idx("b8")) {
+                                // Queen-side castle
+                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("c8") as u8, MoveFlag::QueenCastle as u8));
+                            }
+                        }
+                        // we avoid any check logic here, just generate all moves
+                        _square = util::bb_gs_low_bit(&mut pc_bb);
+                    }
                 }
-                BBPiece::White | BBPiece::Black => todo!()
+                BBPiece::White | BBPiece::Black => unimplemented!()
+            }
+        }
+        moves
+    }
+    pub fn gen_sliding_moves(&self, idx: usize, orth: bool, diag: bool ) -> Vec<Move>{
+        let mut moves = Vec::new();
+        let color_bb: BBPiece = if self.move_color == Color::White as i8 {
+            BBPiece::White
+        } else {
+            BBPiece::Black
+        };
+        let rank = idx / 8;
+        let file = idx % 8;
+        let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+        if orth {
+            // Left moves
+            for f in (0..file).rev() {
+                let target_idx = rank * 8 + f;
+                if util::bb_get(blockers, target_idx) {
+                    // Blocked by a piece
+                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                        // Capture opponent piece
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                    }
+                    break; // Stop sliding in this direction
+                } else {
+                    moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                }
+            }
+            // Right moves
+            for f in (file + 1)..8 {
+                let target_idx = rank * 8 + f;
+                if util::bb_get(blockers, target_idx) {
+                    // Blocked by a piece
+                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                        // Capture opponent piece
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                    }
+                    break; // Stop sliding in this direction
+                } else {
+                    moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                }
+            }
+            // Down moves
+            for r in (0..rank).rev() {
+                let target_idx = r * 8 + file;
+                if util::bb_get(blockers, target_idx) {
+                    // Blocked by a piece
+                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                        // Capture opponent piece
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                    }
+                    break; // Stop sliding in this direction
+                } else {
+                    moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                }
+            }
+            // Up moves
+            for r in (rank + 1)..8 {
+                let target_idx = r * 8 + file;
+                if util::bb_get(blockers, target_idx) {
+                    // Blocked by a piece
+                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                        // Capture opponent piece
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                    }
+                    break; // Stop sliding in this direction
+                } else {
+                    moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                }
+            }
+        }
+        if diag {
+            // Up-Right moves
+            for i in 1..8 {
+                let target_idx = (rank + i) * 8 + (file + i);
+                if target_idx >= 64 || (file + i) >= 8 { break; } // Out of bounds
+                if util::bb_get(blockers, target_idx) {
+                    // Blocked by a piece
+                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                        // Capture opponent piece
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                    }
+                    break; // Stop sliding in this direction
+                } else {
+                    moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                }
+            }
+            // Up-Left moves
+            for i in 1..8 {
+                let target_idx = (rank + i) * 8 + (file - i);
+                if target_idx >= 64 || file < i { break; } // Out of bounds
+                if util::bb_get(blockers, target_idx) {
+                    // Blocked by a piece
+                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                        // Capture opponent piece
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                    }
+                    break; // Stop sliding in this direction
+                } else {
+                    moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                }
+            }
+            if rank > 0 {
+                // Down-Right moves
+                for i in 1..8 {
+                    let target_idx = (rank - i) * 8 + (file + i);
+                    if rank < i || (file + i) >= 8 || target_idx >= 64 { break; } // Out of bounds
+                    if util::bb_get(blockers, target_idx) {
+                        // Blocked by a piece
+                        if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                            // Capture opponent piece
+                            moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                        }
+                        break; // Stop sliding in this direction
+                    } else {
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                    }
+                }
+                // Down-Left moves
+                for i in 1..8 {
+                    let target_idx = (rank - i) * 8 + (file - i);
+                    if rank < i || file < i { break; } // Out of bounds
+                    if util::bb_get(blockers, target_idx) {
+                        // Blocked by a piece
+                        if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
+                            // Capture opponent piece
+                            moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8));
+                        }
+                        break; // Stop sliding in this direction
+                    } else {
+                        moves.push(Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8));
+                    }
+                }
             }
         }
         moves
