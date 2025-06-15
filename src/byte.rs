@@ -17,10 +17,13 @@ fn perft(bd: &mut board::Board, depth: u8) -> u64 {
     for m in bd.gen_moves() {
         let mut bd_copy = bd.clone();
         board::make_move(&mut bd_copy,&m);
-        if depth > 1 {
-            count += perft(&mut bd_copy,depth - 1);
-        } else {
-            count += 1;
-        }    }
+        if !bd_copy.king_is_attacked(){
+            if depth > 1 {
+                count += perft(&mut bd_copy,depth - 1);
+            } else {
+                count += 1;
+            }    
+        }
+    }
     count
 }
