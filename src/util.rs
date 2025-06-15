@@ -109,8 +109,78 @@ pub(crate) fn piece_to_fen(piece: BBPiece, color: Color) -> char {
     }
 }
 
-//Print function for board
+//Make function for board
+pub fn board_from_fen(fen: &str) -> board::Board {
+    use crate::board::{Board, BBPiece};
+    let mut bitboards = [0u64; 8];
+    let mut castling_rights = [false; 4];
+    let mut en_passant = None;
+    let mut halfmove_clock = 0u8;
+    let mut fullmove_number = 1u16;
+    let mut move_color = 1;
 
+    let parts: Vec<&str> = fen.split_whitespace().collect();
+    assert!(parts.len() >= 4, "Invalid FEN string");
+
+    // Piece placement
+    let mut sq = 56; // Start at a8
+    for c in parts[0].chars() {
+        match c {
+            '/' => sq -= 16,
+            '1'..='8' => sq += c.to_digit(10).unwrap() as usize,
+            'P' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
+            'N' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
+            'B' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
+            'R' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
+            'Q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
+            'K' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
+            'p' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            'n' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            'b' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            'r' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            'q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            'k' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            _ => {}
+        }
+    }
+
+    // Active color
+    move_color = match parts[1] {
+        "w" => 1,
+        "b" => -1,
+        _ => 1,
+    };
+
+    // Castling rights
+    if parts[2].contains('K') { castling_rights[0] = true; }
+    if parts[2].contains('Q') { castling_rights[1] = true; }
+    if parts[2].contains('k') { castling_rights[2] = true; }
+    if parts[2].contains('q') { castling_rights[3] = true; }
+
+    // En passant
+    if parts[3] != "-" {
+        en_passant = Some(crate::util::sq_to_idx(parts[3]));
+    }
+
+    // Halfmove clock
+    if parts.len() > 4 {
+        halfmove_clock = parts[4].parse().unwrap_or(0);
+    }
+
+    // Fullmove number
+    if parts.len() > 5 {
+        fullmove_number = parts[5].parse().unwrap_or(1);
+    }
+
+    Board {
+        bitboards,
+        move_color,
+        castling_rights,
+        en_passant,
+        halfmove_clock,
+        fullmove_number,
+    }
+}
 // Print function for Board
 impl std::fmt::Display for board::Board {
     // Prints in FEN format
