@@ -211,23 +211,136 @@ impl Board {
         } else {
             BBPiece::Black
         };
+        let combined_bb = self.combined([BBPiece::White, BBPiece::Black], false);
         for i in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
-            let combined_bb = self.combined([i, color_bb], true);
-            util::bb_print(combined_bb);
+            let mut pc_bb = self.combined([i, color_bb], true);
             // for all - generate start/end squares, get proper flag
             match i {
                 BBPiece::Pawn => {
-                    // Generate pawn moves
-                    // Pushing 
-                    // Single push (check if blocked))
-                    // Double push (check if on inital rank, and if blocked)
-                    // Captures (check if opponent piece diagonal left or right, board wrapping checks)
-                    // En passant (check if en passant can happen))
-                    // Handle promotion if last rank
+                    let mut _square = util::bb_gs_low_bit(&mut pc_bb);
+                    while _square != 64 {
+                        println!("Pawn at square: {}", util::idx_to_sq(_square));
+                        // Generate pawn moves
+                        let mut _moves: Vec<Move> = Vec::new();
+                        // Pushing 
+                        // Single push (check if blocked))
+                        let chk_sqr = if self.move_color == Color::White as i8 {
+                            _square + 8
+                        } else {
+                            _square - 8
+                        };
+                        if !util::bb_get(combined_bb, chk_sqr) {
+                            _moves.push(Move::from_parts(
+                            _square as u8,
+                            chk_sqr as u8,
+                            MoveFlag::Quiet as u8,
+                        ));   
+                        // Double push (check if on inital rank, and if blocked)
+                            let rank = _square / 8;
+                            if (self.move_color == Color::White as i8 && rank == 1) || (self.move_color == Color::Black as i8 && rank == 6) {
+                                let double_push_sqr = if self.move_color == Color::White as i8 {
+                                    _square + 16
+                                } else {
+                                    _square - 16
+                                };
+                                if !util::bb_get(combined_bb, double_push_sqr) {
+                                    _moves.push(Move::from_parts(
+                                        _square as u8,
+                                        double_push_sqr as u8,
+                                        MoveFlag::DoublePush as u8,
+                                    ));
+                                }
+                            }
+                        }               
+                        // Captures (check if opponent piece diagonal left or right, board wrapping checks & en passant)
+                        let file = _square % 8;
+                        // Note: left relative to white/up perspective
+                        if file != 0 {
+                            let left_capture_sqr = if self.move_color == Color::White as i8 {
+                                _square + 7
+                            } else {
+                                _square - 9
+                            };
+                            // check opponent bitboard!
+                            if util::bb_get(self.bitboards[1-(color_bb as usize)], left_capture_sqr) {
+                                _moves.push(Move::from_parts(
+                                    _square as u8,
+                                    left_capture_sqr as u8,
+                                    MoveFlag::Capture as u8,
+                                ));
+                            } else if self.en_passant == Some(left_capture_sqr) {
+                                // En passant capture
+                                _moves.push(Move::from_parts(
+                                    _square as u8,
+                                    left_capture_sqr as u8,
+                                    MoveFlag::EnPassant as u8,
+                                ));
+                            }
+                        }
+                        if file != 7 {
+                            let right_capture_sqr = if self.move_color == Color::White as i8 {
+                                _square + 9
+                            } else {
+                                _square - 7
+                            };
+                            // check opponent bitboard!
+                            if util::bb_get(self.bitboards[1-(color_bb as usize)], right_capture_sqr) {
+                                _moves.push(Move::from_parts(
+                                    _square as u8,
+                                    right_capture_sqr as u8,
+                                    MoveFlag::Capture as u8,
+                                ));
+                            } else if self.en_passant == Some(right_capture_sqr) {
+                                // En passant capture
+                                _moves.push(Move::from_parts(
+                                    _square as u8,
+                                    right_capture_sqr as u8,
+                                    MoveFlag::EnPassant as u8,
+                                ));
+                            }
+                        }
+                        // Handle promotion if last rank
+                        for _move in _moves.iter_mut() {
+                            if (self.move_color == Color::White as i8 && _move.to_square() / 8 == 7) ||
+                               (self.move_color == Color::Black as i8 && _move.to_square() / 8 == 0) {
+                                // Add promotion flags
+                                if _move.flags() & MoveFlag::Capture as u8 != 0 {
+                                    // capture
+                                    _move.set_flags(MoveFlag::KnightPromoCapture as u8);
+                                    moves.push(_move.clone());
+                                    _move.set_flags(MoveFlag::BishopPromoCapture as u8);
+                                    moves.push(_move.clone());
+                                    _move.set_flags(MoveFlag::RookPromoCapture as u8);
+                                    moves.push(_move.clone());
+                                    _move.set_flags(MoveFlag::QueenPromoCapture as u8);
+                                    moves.push(_move.clone());
+                                } else {
+                                _move.set_flags(MoveFlag::KnightPromotion as u8);
+                                moves.push(_move.clone());
+                                _move.set_flags(MoveFlag::BishopPromotion as u8);
+                                moves.push(_move.clone());
+                                _move.set_flags(MoveFlag::RookPromotion as u8);
+                                moves.push(_move.clone());
+                                _move.set_flags(MoveFlag::QueenPromotion as u8);
+                                moves.push(_move.clone());
+                                }
+                            }
+                            else {
+                                // Just a normal move
+                                moves.push(_move.clone());
+                            }
+                        }
+                        _square = util::bb_gs_low_bit(&mut pc_bb);
+                    }
                 }
                 BBPiece::Knight => {
-                    // Generate knight moves
-                    // Use the geometry of the knight to find all possible moves, filter for moving out of the board
+                    let mut _square = util::bb_gs_low_bit(&mut pc_bb);
+                    while _square != 64 {
+                        println!("Knight at square: {}", util::idx_to_sq(_square));
+                        // Generate knight moves
+                        // Use the geometry of the knight to find all possible moves, filter for moving out of the board
+                        _square = util::bb_gs_low_bit(&mut pc_bb);
+                    }
                 }
                 BBPiece::Bishop => {
                     // Generate bishop moves
@@ -250,6 +363,7 @@ impl Board {
                     // If castling rights exist, check if no pieces are in between the king and rook
                     // we avoid any check logic here, just generate all moves
                 }
+                BBPiece::White | BBPiece::Black => todo!()
             }
         }
         moves

@@ -209,6 +209,17 @@ pub(crate) fn bb_set(bb: &mut u64, square: usize, value: bool) {
     }
 }
 #[inline]
+pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
+    if *bb == 0 {
+        return 64; // Return an invalid index if the bitboard is empty
+    }
+    let low_bit = bb.trailing_zeros() as usize;
+    // Clear the lowest bit
+    *bb &= !(1 << low_bit);
+    low_bit
+}
+
+#[inline]
 pub(crate) fn bb_print(bb: u64) -> () {
     let mut result = String::new();
     for rank in (0..8).rev() {

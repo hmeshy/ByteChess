@@ -20,5 +20,5 @@ fn main() {
         halfmove_clock: 0,
         fullmove_number: 1,
     };
-    _board.gen_moves();
+    println!("Number of Moves: {}",_board.gen_moves().len());
 }
