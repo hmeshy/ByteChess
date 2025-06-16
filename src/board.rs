@@ -116,13 +116,13 @@ pub const STARTING_POSITION: Board = Board {
     fullmove_number: 1,
     last_move: None,
 };
-pub fn is_checkmate(board: &mut Board) -> bool {
+pub fn is_check(board: &mut Board) -> bool {
         // Check if the current player is in checkmate
+        board.move_color = -board.move_color; // Reverse the move color to check if the opponent's king is attacked
         if !board.king_is_attacked() {
             return false; // Not in check, so not checkmate
         }
-        // Generate all legal moves for the current player, checkmate if none are available
-        util::perft(board,1) == 0
+        true
     }
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
 // assumes that a move is legal, tracks other FEN changes
@@ -235,7 +235,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
 
 impl Board {
     // Pseudolegal move generaotr
-    pub fn gen_moves(&self) -> Vec<Move> {
+    pub fn gen_moves(&self, captures_only: bool) -> Vec<Move> {
         let mut moves = Vec::new();
         let color_bb: BBPiece = if self.move_color == Color::White as i8 {
             BBPiece::White
@@ -499,6 +499,10 @@ impl Board {
                 }
                 BBPiece::White | BBPiece::Black => unimplemented!()
             }
+        }
+        if captures_only {
+            // Filter out non-capture moves
+            moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
         }
         moves
     }

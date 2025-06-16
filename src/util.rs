@@ -1,5 +1,6 @@
 use crate::board::BBPiece;
-use crate::board;
+use crate::board::Board;
+use crate::{board, PIECE_VALUES};
 
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -33,7 +34,33 @@ pub enum MoveFlag {
 pub struct Move {
     pub info: u16, // 6 bits for from and to, 4 bits for extra info (promotion, capture, en passant, castling)
 }
+fn captured_piece(board: &Board, m: &Move) -> Option<BBPiece> {
+    if m.flags() & MoveFlag::Capture as u8 != 0 {
+        let to_square = m.to_square() as usize;
+        for (i, &bb) in board.bitboards.iter().enumerate() {
+            if i == BBPiece::White as usize || i == BBPiece::Black as usize {
+                continue; // Skip color bitboards
+            } else if bb_get(bb, to_square) {
+                return Some(BBPiece::from(i));
+            }
+        }
+    }
+    None
+}
 
+pub fn get_ordered_moves(board: &Board, captures_only: bool) -> Vec<Move> {
+    let mut moves = board.gen_moves(captures_only);
+    moves.sort_by(|a, b| {
+        let value_a = captured_piece(&board, a)
+            .map(|piece| PIECE_VALUES[piece as usize])
+            .unwrap_or(0);
+        let value_b = captured_piece(&board, b)
+            .map(|piece| PIECE_VALUES[piece as usize])
+            .unwrap_or(0);
+        value_b.cmp(&value_a)
+    });
+    moves
+}
 impl std::fmt::Display for Move {
     /// Displays the move in UCI format (e.g., "a2a4")
      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -352,15 +379,33 @@ pub(crate) fn bb_print(bb: u64) -> () {
     }
     print!("{}", result);
 }
-pub fn perft(bd: &mut board::Board, depth: u8) -> u64 {
+
+pub fn evaluate(board: &board::Board) -> i32 {
+    let mut score = 0;
+    for i in 0..12{
+        // for now piece values, next mobility too!
+        let piece = BBPiece::from((i%6)+2);
+        let colorbb = if i < 6 { BBPiece::White } else { BBPiece::Black };
+        let piece_value = PIECE_VALUES[piece as usize];
+        let bitboard = board.combined([piece, colorbb], true);
+        let count = bitboard.count_ones() as i32;
+        score += if colorbb == BBPiece::White {
+            piece_value * count
+        } else {
+            -piece_value * count
+        };
+    }
+    score * board.move_color as i32 // Adjust score based on the current player's color
+}
+pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
     let mut count = 0;
-    for m in bd.gen_moves() {
+    for m in bd.gen_moves(captures_only) {
         let mut bd_copy = bd.clone();
         board::make_move(&mut bd_copy,&m);
         if !bd_copy.king_is_attacked(){
             //println!("{}",m);
             if depth > 1 {
-                count += perft(&mut bd_copy,depth - 1);
+                count += perft(&mut bd_copy,depth - 1, captures_only);
             } else {
                 count += 1;
             }    
