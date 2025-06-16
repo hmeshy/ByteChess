@@ -45,6 +45,7 @@ pub struct Board {
     pub en_passant: Option<usize>,
     pub halfmove_clock: u8,
     pub fullmove_number: u16,
+    pub last_move: Option<Move>,
 }
 
 impl Board {
@@ -113,8 +114,16 @@ pub const STARTING_POSITION: Board = Board {
     en_passant: None,
     halfmove_clock: 0,
     fullmove_number: 1,
+    last_move: None,
 };
-
+pub fn is_checkmate(board: &mut Board) -> bool {
+        // Check if the current player is in checkmate
+        if !board.king_is_attacked() {
+            return false; // Not in check, so not checkmate
+        }
+        // Generate all legal moves for the current player, checkmate if none are available
+        util::perft(board,1) == 0
+    }
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
 // assumes that a move is legal, tracks other FEN changes
 pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
@@ -144,7 +153,19 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
                 board.castling_rights[2] = false; // Black King-side
             }
         }
+    } else if board.get([BBPiece::Rook], to_index) {
+        // Capturing a rook possibly on a corner square, update castling rights for the opponent
+        if to_index == util::sq_to_idx("a1") as u8 {
+            board.castling_rights[1] = false; // White Queen-side
+        } else if to_index == util::sq_to_idx("h1") as u8 {
+            board.castling_rights[0] = false; // White King-side
+        } else if to_index == util::sq_to_idx("a8") as u8 {
+            board.castling_rights[3] = false; // Black Queen-side
+        } else if to_index == util::sq_to_idx("h8") as u8 {
+            board.castling_rights[2] = false; // Black King-side
+        }
     }
+
     
     // Zero the from_index and replace the to_index in every bitboard
     for i in BBPiece::iter() {
@@ -167,7 +188,13 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     }
     if flags == MoveFlag::EnPassant as u8 { // En passant
         // Clear the captured pawn
-        let captured_pawn_index = to_index - 8 * board.move_color as u8;
+        let captured_pawn_index = if board.move_color == Color::White as i8 {
+            // Black just moved, so en passant capture is one rank down
+            to_index.wrapping_sub(8)
+        } else {
+            // White just moved, so en passant capture is one rank up
+            to_index.wrapping_add(8)
+        };        
         board.set([BBPiece::Pawn, BBPiece::White, BBPiece::Black], captured_pawn_index, false); // Clear the captured pawn
     }
     if flags & 0x2 != 0 && flags & 0xC == 0 { // Castling
@@ -202,11 +229,12 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     } else {
         board.halfmove_clock += 1; // Increment halfmove clock
     }
+    board.last_move = Some(*_move);
     Ok(())
 }
 
-// Pseudolegal move generator
 impl Board {
+    // Pseudolegal move generaotr
     pub fn gen_moves(&self) -> Vec<Move> {
         let mut moves = Vec::new();
         let color_bb: BBPiece = if self.move_color == Color::White as i8 {
@@ -421,23 +449,27 @@ impl Board {
                             if (_square + 1) % 8 != 0 { Some((_square + 1) as u8) } else { None }, // Right
                             if _square + 9 < 64 && (_square % 8 != 7) { Some((_square + 9) as u8) } else { None }, // Up-Right
                             if _square + 7 < 64 && (_square % 8 != 0) { Some((_square + 7) as u8) } else { None }, // Up-Left
-                            if _square >= 9 && (_square % 8 != 7) { Some((_square - 9) as u8) } else { None }, // Down-Right
-                            if _square >= 7 && (_square % 8 != 0) { Some((_square - 7) as u8) } else { None }, // Down-Left
+                            if _square >= 7 && (_square % 8 != 7) { Some((_square - 7) as u8) } else { None }, // Down-Right
+                            if _square >= 9 && (_square % 8 != 0) { Some((_square - 9) as u8) } else { None }, // Down-Left
                         ];
                         for &maybe_move_square in king_moves.iter() {
                             if let(Some(move_square)) = maybe_move_square {
                                 // If the square is empty or occupied by an opponent piece (and not past border), add the move
                                 // Check if the square is empty or occupied by an opponent piece
                                 if !util::bb_get(self.bitboards[color_bb as usize], move_square as usize) {
-                                    let mut flags = MoveFlag::Quiet as u8;
-                                    if util::bb_get(self.bitboards[1-(color_bb as usize)], move_square as usize) {
-                                        flags = MoveFlag::Capture as u8; // Capture if opponent piece
+                                    // Check "wrapping"
+                                    let file_d = std::cmp::max(_square%8, (move_square % 8) as usize) - std::cmp::min(_square%8, (move_square % 8) as usize);
+                                    if file_d <= 1 { 
+                                        let mut flags = MoveFlag::Quiet as u8;
+                                        if util::bb_get(self.bitboards[1-(color_bb as usize)], move_square as usize) {
+                                            flags = MoveFlag::Capture as u8; // Capture if opponent piece
+                                        }
+                                        moves.push(Move::from_parts(
+                                            _square as u8,
+                                            move_square,
+                                            flags,
+                                        ));
                                     }
-                                    moves.push(Move::from_parts(
-                                        _square as u8,
-                                        move_square,
-                                        flags,
-                                    ));
                                 }
                             }
                         }
@@ -614,30 +646,58 @@ impl Board {
             BBPiece::White
         };
         let mut king_bb = self.combined([BBPiece::King, color_bb], true);
-        color_bb = if self.move_color == Color::White as i8 {
-            BBPiece::White //back to normal for our pieces
+        if let Some(_move) = self.last_move {
+            if _move.flags() & 0x2 != 0 && _move.flags() & 0xC == 0 { // Castling
+                // Get squares moved through
+                let from_index = _move.from_square();
+                let to_index = _move.to_square();
+                if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("g1") as u8 { // White King-side castle
+                    if self.square_is_attacked(util::sq_to_idx("e1")) || self.square_is_attacked(util::sq_to_idx("f1")) {
+                        return true;
+                    }
+                } else if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("c1") as u8 { // White Queen-side castle
+                    if self.square_is_attacked(util::sq_to_idx("e1")) || self.square_is_attacked(util::sq_to_idx("d1")) {
+                        return true;
+                    }
+                } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("g8") as u8 { // Black King-side castle
+                    if self.square_is_attacked(util::sq_to_idx("e8")) || self.square_is_attacked(util::sq_to_idx("f8")) {
+                        return true;
+                    } 
+                } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("c8") as u8 { // Black Queen-side castle
+                    if self.square_is_attacked(util::sq_to_idx("e8")) || self.square_is_attacked(util::sq_to_idx("d8")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return self.square_is_attacked(util::bb_gs_low_bit(&mut king_bb));
+    }
+    // Checks if a square is attacked
+    pub fn square_is_attacked(&self, square: usize) -> bool {
+        // Check if the square is attacked by any piece of current player (i.e., can we take the opponent king after they made their move)
+        let mut color_bb: BBPiece = if self.move_color == Color::White as i8 {
+            BBPiece::White
         } else {
             BBPiece::Black
         };
-        let square = util::bb_gs_low_bit(&mut king_bb);
         let rank = square / 8;
         let file = square % 8;
         let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
         // Check for pawn attacks
         if self.move_color == Color::White as i8 {
             // White pawns attack up-left and up-right
-            if file > 0 && self.get([BBPiece::Pawn, BBPiece::White], square - 9) {
+            if file > 0 && rank > 0 && self.get([BBPiece::Pawn, BBPiece::White], square - 9) {
                 return true
             }
-            if file < 7 && self.get([BBPiece::Pawn, BBPiece::White], square - 7) {
+            if file < 7 && rank > 0 && self.get([BBPiece::Pawn, BBPiece::White], square - 7) {
                 return true
             }
         } else {
             // Black pawns attack down-left and down-right
-            if file > 0 && self.get([BBPiece::Pawn, BBPiece::Black], square + 7) {
+            if file > 0 && rank < 7 && self.get([BBPiece::Pawn, BBPiece::Black], square + 7) {
                 return true
             }
-            if file < 7 && self.get([BBPiece::Pawn, BBPiece::Black], square + 9) {
+            if file < 7 && rank < 7 && self.get([BBPiece::Pawn, BBPiece::Black], square + 9) {
                 return true
             }
         }
@@ -785,6 +845,32 @@ impl Board {
                         }
                         break; // Stop sliding in this direction
                     } 
+                }
+            }
+            let king_moves = [
+                // Only include moves that are within 0..=63
+                if square + 8 < 64 { Some((square + 8) as u8) } else { None }, // Up
+                if square >= 8     { Some((square - 8) as u8) } else { None }, // Down
+                if square % 8 != 0 { Some((square - 1) as u8) } else { None }, // Left
+                if (square + 1) % 8 != 0 { Some((square + 1) as u8) } else { None }, // Right
+                if square + 9 < 64 && (square % 8 != 7) { Some((square + 9) as u8) } else { None }, // Up-Right
+                if square + 7 < 64 && (square % 8 != 0) { Some((square + 7) as u8) } else { None }, // Up-Left
+                if square >= 7 && (square % 8 != 7) { Some((square - 7) as u8) } else { None }, // Down-Right
+                if square >= 9 && (square % 8 != 0) { Some((square - 9) as u8) } else { None }, // Down-Left
+            ];
+            for &maybe_move_square in king_moves.iter() {
+                if let(Some(move_square)) = maybe_move_square {
+                    // If the square is empty or occupied by an opponent piece (and not past border), add the move
+                    // Check if the square is empty or occupied by an opponent piece
+                    if !util::bb_get(self.bitboards[color_bb as usize], move_square as usize) {
+                        // Check "wrapping"
+                        let file_d = std::cmp::max(square%8, (move_square % 8) as usize) - std::cmp::min(square%8, (move_square % 8) as usize);
+                        if file_d <= 1 { 
+                            if self.get([BBPiece::King, color_bb], move_square as usize) {
+                                return true
+                            }                            
+                        }
+                    }
                 }
             }
         false

@@ -36,6 +36,24 @@ pub struct Move {
     pub info: u16, // 6 bits for from and to, 4 bits for extra info (promotion, capture, en passant, castling)
 }
 
+impl std::fmt::Display for Move {
+    /// Displays the move in UCI format (e.g., "a2a4")
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let from = idx_to_sq(self.from_square() as usize);
+        let to = idx_to_sq(self.to_square() as usize);
+        let promo = match self.flags() {
+            x if x == MoveFlag::KnightPromotion as u8 || x == MoveFlag::KnightPromoCapture as u8 => Some('n'),
+            x if x == MoveFlag::BishopPromotion as u8 || x == MoveFlag::BishopPromoCapture as u8 => Some('b'),
+            x if x == MoveFlag::RookPromotion as u8   || x == MoveFlag::RookPromoCapture as u8   => Some('r'),
+            x if x == MoveFlag::QueenPromotion as u8  || x == MoveFlag::QueenPromoCapture as u8  => Some('q'),
+            _ => None,
+        };
+        match promo {
+            Some(p) => write!(f, "{}{}{}", from, to, p),
+            None => write!(f, "{}{}", from, to),
+        }
+    }
+}
 // Methods to interact with the move data
 impl Move {
     #[inline]
@@ -179,6 +197,7 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         en_passant,
         halfmove_clock,
         fullmove_number,
+        last_move: None,
     }
 }
 // Print function for Board
@@ -307,4 +326,20 @@ pub(crate) fn bb_print(bb: u64) -> () {
         result.push('\n');
     }
     print!("{}", result);
+}
+pub fn perft(bd: &mut board::Board, depth: u8) -> u64 {
+    let mut count = 0;
+    for m in bd.gen_moves() {
+        let mut bd_copy = bd.clone();
+        board::make_move(&mut bd_copy,&m);
+        if !bd_copy.king_is_attacked(){
+            //println!("{}",m);
+            if depth > 1 {
+                count += perft(&mut bd_copy,depth - 1);
+            } else {
+                count += 1;
+            }    
+        }
+    }
+    count
 }
