@@ -4,6 +4,18 @@ use std::fmt::Display;
 mod board;
 mod util;
 
+/*fn main()
+{
+    let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    println!("{}", util::perft(&mut board, 1));
+    println!("{}", util::perft(&mut board, 2));
+    println!("{}", util::perft(&mut board, 3));
+    println!("{}", util::perft(&mut board, 4));
+    println!("{}", util::perft(&mut board, 5));
+    println!("{}", util::perft(&mut board, 6));
+    println!("{}", util::perft(&mut board, 7));
+}*/
+
 fn main() {
     use std::io::{self, Write, BufRead};
     let stdin = io::stdin();
