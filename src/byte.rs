@@ -7,16 +7,10 @@ mod board;
 mod util;
 pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 10000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
-/*fn main()
+/*fn main() // perft debugging as necessary
 {
-    let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    println!("{}", util::perft(&mut board, 1));
-    println!("{}", util::perft(&mut board, 2));
-    println!("{}", util::perft(&mut board, 3));
-    println!("{}", util::perft(&mut board, 4));
-    println!("{}", util::perft(&mut board, 5));
-    println!("{}", util::perft(&mut board, 6));
-    println!("{}", util::perft(&mut board, 7));
+    let mut board = util::board_from_fen("8/3r1p2/k3p1p1/4P1Pp/1RK2P1P/8/8/8 w - - 1 58");
+    println!("{}", util::perft(&mut board, 1, false)); 
 }*/
 
 fn main() {

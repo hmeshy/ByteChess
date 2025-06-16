@@ -1,6 +1,8 @@
 use crate::board::BBPiece;
 use crate::board::Board;
 use crate::{board, PIECE_VALUES};
+use crate::MOBILITY_VALUES;
+
 
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -382,20 +384,53 @@ pub(crate) fn bb_print(bb: u64) -> () {
 
 pub fn evaluate(board: &board::Board) -> i32 {
     let mut score = 0;
+    let mut w_board = board.clone();
+    let mut b_board = board.clone();
+    w_board.move_color = 1; // Set to white for evaluation
+    b_board.move_color = -1; // Set to black for evaluation
+    let w_moves = w_board.gen_moves(false);
+    let b_moves = b_board.gen_moves(false);
+    let w_attacks = get_piece_dist(w_moves, &w_board);
+    let b_attacks = get_piece_dist(b_moves, &b_board);
     for i in 0..12{
         // for now piece values, next mobility too!
         let piece = BBPiece::from((i%6)+2);
         let colorbb = if i < 6 { BBPiece::White } else { BBPiece::Black };
+        let is_white = colorbb == BBPiece::White;
         let piece_value = PIECE_VALUES[piece as usize];
-        let bitboard = board.combined([piece, colorbb], true);
-        let count = bitboard.count_ones() as i32;
-        score += if colorbb == BBPiece::White {
-            piece_value * count
-        } else {
-            -piece_value * count
-        };
+        let mobility_value = MOBILITY_VALUES[piece as usize];
+        let piece_attacks = if is_white { w_attacks } else { b_attacks };
+        let attack_value = piece_attacks[piece as usize];
+        let mut bitboard = board.combined([piece, colorbb], true);
+        let mut partial_score = 0;
+        partial_score += piece_value * bitboard.count_ones() as i32 + mobility_value * attack_value as i32;
+        if (piece == BBPiece::Pawn) {
+            while bitboard != 0 {
+                let square = bb_gs_low_bit(&mut bitboard);
+                partial_score += 3 * if is_white { (square / 8 - 1) as i32 } else { (7 - square / 8) as i32 };
+            }
+        }
+        score += if is_white { partial_score } else { -partial_score };
+        partial_score = 0; // Reset for next piece
     }
     score * board.move_color as i32 // Adjust score based on the current player's color
+}
+fn get_piece_dist(moves: Vec<Move>, bd: &board::Board) -> [u32; 8] {
+    let mut piece_attacks = [0u32; 8];
+    for m in moves {
+        let from_square = m.from_square() as usize;
+        // find which piece is moving
+        let mut piece = BBPiece::Pawn;
+        for i in 2..8 {
+            if bb_get(bd.bitboards[i], from_square) {
+                piece = BBPiece::from(i);
+                break;
+            }
+        }
+        let piece_index = (piece as usize);
+        piece_attacks[piece_index] += 1;
+    }
+    piece_attacks
 }
 pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
     let mut count = 0;

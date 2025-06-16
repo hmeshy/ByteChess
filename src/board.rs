@@ -242,7 +242,7 @@ impl Board {
         } else {
             BBPiece::Black
         };
-        let combined_bb = self.combined([BBPiece::White, BBPiece::Black], false);
+        let combined_bb: u64 = self.combined([BBPiece::White, BBPiece::Black], false);
         for i in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
             let mut pc_bb = self.combined([i, color_bb], true);
             // for all - generate start/end squares, get proper flag
@@ -684,6 +684,11 @@ impl Board {
         } else {
             BBPiece::Black
         };
+        let mut opp_bb: BBPiece = if self.move_color == Color::White as i8 {
+            BBPiece::Black
+        } else {
+            BBPiece::White
+        };
         let rank = square / 8;
         let file = square % 8;
         let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
@@ -866,14 +871,12 @@ impl Board {
                 if let(Some(move_square)) = maybe_move_square {
                     // If the square is empty or occupied by an opponent piece (and not past border), add the move
                     // Check if the square is empty or occupied by an opponent piece
-                    if !util::bb_get(self.bitboards[color_bb as usize], move_square as usize) {
-                        // Check "wrapping"
-                        let file_d = std::cmp::max(square%8, (move_square % 8) as usize) - std::cmp::min(square%8, (move_square % 8) as usize);
-                        if file_d <= 1 { 
-                            if self.get([BBPiece::King, color_bb], move_square as usize) {
-                                return true
-                            }                            
-                        }
+                    // Check "wrapping"
+                    let file_d = std::cmp::max(square%8, (move_square % 8) as usize) - std::cmp::min(square%8, (move_square % 8) as usize);
+                    if file_d <= 1 { 
+                        if self.get([BBPiece::King, color_bb], move_square as usize) {
+                            return true
+                        }                            
                     }
                 }
             }
