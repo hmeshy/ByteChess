@@ -4,7 +4,7 @@ extern crate strum_macros;
 use std::u8::MAX;
 
 use crate::util;
-use crate::util::{Color,Move,MoveFlag};
+use crate::util::{Color,Move,MoveFlag,Squares};
 use self::strum_macros::EnumIter;
 use self::strum::IntoEnumIterator;
 
@@ -141,27 +141,27 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
         // Rook moved, update castling rights
         // Todo optimize with color var
         if board.move_color == Color::White as i8 {
-            if from_index == util::sq_to_idx("a1") as u8 {
+            if from_index == Squares::A1 as u8 {
                 board.castling_rights[1] = false; // White Queen-side
-            } else if from_index == util::sq_to_idx("h1") as u8 {
+            } else if from_index == Squares::H1 as u8 {
                 board.castling_rights[0] = false; // White King-side
             }
         } else {
-            if from_index == util::sq_to_idx("a8") as u8 {
+            if from_index == Squares::A8 as u8 {
                 board.castling_rights[3] = false; // Black Queen-side
-            } else if from_index == util::sq_to_idx("h8") as u8 {
+            } else if from_index == Squares::H8 as u8 {
                 board.castling_rights[2] = false; // Black King-side
             }
         }
     } else if board.get([BBPiece::Rook], to_index) {
         // Capturing a rook possibly on a corner square, update castling rights for the opponent
-        if to_index == util::sq_to_idx("a1") as u8 {
+        if to_index == Squares::A1 as u8 {
             board.castling_rights[1] = false; // White Queen-side
-        } else if to_index == util::sq_to_idx("h1") as u8 {
+        } else if to_index == Squares::H1 as u8 {
             board.castling_rights[0] = false; // White King-side
-        } else if to_index == util::sq_to_idx("a8") as u8 {
+        } else if to_index == Squares::A8 as u8 {
             board.castling_rights[3] = false; // Black Queen-side
-        } else if to_index == util::sq_to_idx("h8") as u8 {
+        } else if to_index == Squares::H8 as u8 {
             board.castling_rights[2] = false; // Black King-side
         }
     }
@@ -198,14 +198,14 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
         board.set([BBPiece::Pawn, BBPiece::White, BBPiece::Black], captured_pawn_index, false); // Clear the captured pawn
     }
     if flags & 0x2 != 0 && flags & 0xC == 0 { // Castling
-        if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("g1") as u8 { // White King-side castle
-            board.move_piece([BBPiece::Rook, BBPiece::White], util::sq_to_idx("h1"), util::sq_to_idx("f1")); 
-        } else if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("c1") as u8 { // White Queen-side castle
-            board.move_piece([BBPiece::Rook, BBPiece::White], util::sq_to_idx("a1"), util::sq_to_idx("d1"));
-        } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("g8") as u8 { // Black King-side castle
-            board.move_piece([BBPiece::Rook, BBPiece::Black], util::sq_to_idx("h8"), util::sq_to_idx("f8")); 
-        } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("c8") as u8 { // Black Queen-side castle
-            board.move_piece([BBPiece::Rook, BBPiece::Black], util::sq_to_idx("a8"), util::sq_to_idx("d8")); 
+        if from_index == Squares::E1 as u8 && to_index == Squares::G1 as u8 { // White King-side castle
+            board.move_piece([BBPiece::Rook, BBPiece::White], Squares::H1, Squares::F1); 
+        } else if from_index == Squares::E1 as u8 && to_index == Squares::C1 as u8 { // White Queen-side castle
+            board.move_piece([BBPiece::Rook, BBPiece::White], Squares::A1, Squares::D1);
+        } else if from_index == Squares::E8 as u8 && to_index == Squares::G8 as u8 { // Black King-side castle
+            board.move_piece([BBPiece::Rook, BBPiece::Black], Squares::H8, Squares::F8); 
+        } else if from_index == Squares::E8 as u8 && to_index == Squares::C8 as u8 { // Black Queen-side castle
+            board.move_piece([BBPiece::Rook, BBPiece::Black], Squares::A8, Squares::D8); 
         }
     }
 
@@ -475,22 +475,22 @@ impl Board {
                         }
                         // If castling rights exist, check if no pieces are in between the king and rook
                         if self.move_color == Color::White as i8 {
-                            if self.castling_rights[0] && _square == util::sq_to_idx("e1") as usize && !util::bb_get(combined_bb, util::sq_to_idx("f1")) && !util::bb_get(combined_bb, util::sq_to_idx("g1")) {
+                            if self.castling_rights[0] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::F1 as usize) && !util::bb_get(combined_bb, Squares::G1 as usize) {
                                 // King-side castle
-                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("g1") as u8, MoveFlag::KingCastle as u8));
+                                moves.push(Move::from_parts(_square as u8, Squares::G1 as u8, MoveFlag::KingCastle as u8));
                             }
-                            if self.castling_rights[1] && _square == util::sq_to_idx("e1") as usize && !util::bb_get(combined_bb, util::sq_to_idx("d1")) && !util::bb_get(combined_bb, util::sq_to_idx("c1")) && !util::bb_get(combined_bb, util::sq_to_idx("b1")) {
+                            if self.castling_rights[1] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::D1 as usize) && !util::bb_get(combined_bb, Squares::C1 as usize) && !util::bb_get(combined_bb, Squares::B1 as usize) {
                                 // Queen-side castle
-                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("c1") as u8, MoveFlag::QueenCastle as u8));
+                                moves.push(Move::from_parts(_square as u8, Squares::C1 as u8, MoveFlag::QueenCastle as u8));
                             }
                         } else {
-                            if self.castling_rights[2] && _square == util::sq_to_idx("e8") as usize && !util::bb_get(combined_bb, util::sq_to_idx("f8")) && !util::bb_get(combined_bb, util::sq_to_idx("g8")) {
+                            if self.castling_rights[2] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::F8 as usize) && !util::bb_get(combined_bb, Squares::G8 as usize) {
                                 // King-side castle
-                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("g8") as u8, MoveFlag::KingCastle as u8));
+                                moves.push(Move::from_parts(_square as u8, Squares::G8 as u8, MoveFlag::KingCastle as u8));
                             }
-                            if self.castling_rights[3] && _square == util::sq_to_idx("e8") as usize && !util::bb_get(combined_bb, util::sq_to_idx("d8")) && !util::bb_get(combined_bb, util::sq_to_idx("c8")) && !util::bb_get(combined_bb, util::sq_to_idx("b8")) {
+                            if self.castling_rights[3] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::D8 as usize) && !util::bb_get(combined_bb, Squares::C8 as usize) && !util::bb_get(combined_bb, Squares::B8 as usize) {
                                 // Queen-side castle
-                                moves.push(Move::from_parts(_square as u8, util::sq_to_idx("c8") as u8, MoveFlag::QueenCastle as u8));
+                                moves.push(Move::from_parts(_square as u8, Squares::C8 as u8, MoveFlag::QueenCastle as u8));
                             }
                         }
                         // we avoid any check logic here, just generate all moves
@@ -651,20 +651,20 @@ impl Board {
                 // Get squares moved through
                 let from_index = _move.from_square();
                 let to_index = _move.to_square();
-                if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("g1") as u8 { // White King-side castle
-                    if self.square_is_attacked(util::sq_to_idx("e1")) || self.square_is_attacked(util::sq_to_idx("f1")) {
+                if from_index == Squares::E1 as u8 && to_index == Squares::G1 as u8 { // White King-side castle
+                    if self.square_is_attacked(Squares::E1 as usize) || self.square_is_attacked(Squares::F1 as usize) {
                         return true;
                     }
-                } else if from_index == util::sq_to_idx("e1") as u8 && to_index == util::sq_to_idx("c1") as u8 { // White Queen-side castle
-                    if self.square_is_attacked(util::sq_to_idx("e1")) || self.square_is_attacked(util::sq_to_idx("d1")) {
+                } else if from_index == Squares::E1 as u8 && to_index == Squares::C1 as u8 { // White Queen-side castle
+                    if self.square_is_attacked(Squares::E1 as usize) || self.square_is_attacked(Squares::D1 as usize) {
                         return true;
                     }
-                } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("g8") as u8 { // Black King-side castle
-                    if self.square_is_attacked(util::sq_to_idx("e8")) || self.square_is_attacked(util::sq_to_idx("f8")) {
+                } else if from_index == Squares::E8 as u8 && to_index == Squares::G8 as u8 { // Black King-side castle
+                    if self.square_is_attacked(Squares::E8 as usize) || self.square_is_attacked(Squares::F8 as usize) {
                         return true;
                     } 
-                } else if from_index == util::sq_to_idx("e8") as u8 && to_index == util::sq_to_idx("c8") as u8 { // Black Queen-side castle
-                    if self.square_is_attacked(util::sq_to_idx("e8")) || self.square_is_attacked(util::sq_to_idx("d8")) {
+                } else if from_index == Squares::E8 as u8 && to_index == Squares::C8 as u8 { // Black Queen-side castle
+                    if self.square_is_attacked(Squares::E8 as usize) || self.square_is_attacked(Squares::D8 as usize) {
                         return true;
                     }
                 }
