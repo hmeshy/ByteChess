@@ -7,10 +7,13 @@ mod board;
 mod util;
 pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 10000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
-/*fn main() // perft debugging as necessary
+/*fn main() // perft profiling debugging as necessary
 {
-    let mut board = util::board_from_fen("8/3r1p2/k3p1p1/4P1Pp/1RK2P1P/8/8/8 w - - 1 58");
-    println!("{}", util::perft(&mut board, 1, false)); 
+    let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 6, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
 }*/
 
 fn main() {
@@ -19,7 +22,7 @@ fn main() {
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut my_time: u64 = 1000 * 60;      // Bot's remaining time in ms
-    let mut my_inc: u64 = 1000 * 5;       // Bot's increment in ms
+    let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
     println!("id name ByteChess");
@@ -168,7 +171,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -
                 }
             }
         }
-        println!("info depth {} move {} score cp {}", depth, best_move, alpha);
+        println!("info score cp {} depth {} pv {} move {}", alpha, depth, best_move, best_move);
         previous_best_move = best_move.clone();
         prev_eval = alpha; // Store the previous evaluation
         alpha = i32::MIN + 1; // Reset alpha for the next iteration
