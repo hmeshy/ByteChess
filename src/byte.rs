@@ -9,11 +9,18 @@ pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 10000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
 /*fn main() // perft profiling debugging as necessary
 {
-    /*unsafe {
+    unsafe {
         env::set_var("RUST_BACKTRACE", "1");
-    }*/ // debug code
-    let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    let start = std::time::Instant::now();
+    } // debug code
+    let mut board = util::board_from_fen("r3k2r/qp2bpp1/p2p4/N2Pp1P1/P4n2/5P2/1PPQB3/R3K2R b KQkq - 0 20");
+    println!("{}", board);
+    let legal_moves = board.gen_moves(false);
+    let found = legal_moves.iter().find(|m| format!("{}", m) == "h8h1");
+    if let Some(m) = found {
+        board::make_move(&mut board, m).unwrap();
+    }
+    println!("{}", board);
+    /*let start = std::time::Instant::now();
     println!("{}", util::perft(&mut board, 4, false));
     let duration = start.elapsed();
     println!("perft took {} ms", duration.as_millis());
@@ -28,7 +35,7 @@ pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
     let start = std::time::Instant::now();
     println!("{}", util::perft(&mut board, 7, false));
     let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
+    println!("perft took {} ms", duration.as_millis());*/
 }*/
 
 fn main() {
@@ -36,7 +43,7 @@ fn main() {
     let stdin = io::stdin();
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    let mut my_time: u64 = 1000 * 60;      // Bot's remaining time in ms
+    let mut my_time: u64 = 1000 * 600;      // Bot's remaining time in ms
     let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
@@ -63,6 +70,8 @@ fn main() {
             "ucinewgame" => {
                 board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
                 input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+                let mut board_hist: Vec<String> = Vec::new();
+                board_hist.push(input_fen.clone());
             }
             "position" => {
                 // position [fen <fenstring> | startpos ]  moves <move1> ... <movei>
@@ -144,8 +153,6 @@ fn main() {
                 let elapsed = start.elapsed().as_millis() as u64;
                 my_time = my_time.saturating_sub(elapsed).saturating_add(my_inc);
 
-                // Print for debugging
-                println!("info string Bot time left: {} ms", my_time);
                 // Play the first legal move (pl with legality check)
                 println!("bestmove {}", m);
                 board_hist.push(format!("{}", board));
@@ -227,21 +234,23 @@ fn minimax(board: &mut board::Board, board_hist: &Vec<String>, depth: i32, depth
     }
     let mut moves = get_ordered_moves(board, false);
     for m in &moves{
-        let mut board_copy = board.clone();
-        board::make_move(&mut board_copy, &m);
-        if !board_copy.king_is_attacked() {
+        board::make_move(board, &m);
+        if !board.king_is_attacked() {
             // move IS legal
-            let eval = -minimax(&mut board_copy, board_hist, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
+            let eval = -minimax(board, board_hist, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
             if eval >= beta {
+                board::undo_move(board);
                 return beta; // Beta cut-off
             }
             if eval > alpha {
                 alpha = eval; // Update alpha
             }
             if timer.elapsed().as_millis() > think_time as u128 {
+                board::undo_move(board);
                 return alpha
             }
         }
+        board::undo_move(board);
     }
     alpha
 }

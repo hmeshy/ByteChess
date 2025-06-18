@@ -131,10 +131,12 @@ pub const STARTING_POSITION: Board = Board {
 pub fn is_check(board: &mut Board) -> bool {
         // Check if the current player is in checkmate
         board.move_color = -board.move_color; // Reverse the move color to check if the opponent's king is attacked
+        let mut ret = true;
         if !board.king_is_attacked() {
-            return false; // Not in check, so not checkmate
+            ret = false
         }
-        true
+        board.move_color = -board.move_color; // Reverse the move color back!!
+        ret
     }
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
 // assumes that a move is legal, tracks other FEN changes
@@ -153,7 +155,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
         // King moved, update castling rights
         board.castling_rights[(1-board.move_color) as usize] = false; // First castling rights for color
         board.castling_rights[(2-board.move_color) as usize] = false; // Second castling rights for color
-    } else if board.get([BBPiece::Rook], from_index) {
+    } if board.get([BBPiece::Rook], from_index) {
         // Rook moved, update castling rights
         // Todo optimize with color var
         if board.move_color == Color::White as i8 {
@@ -169,7 +171,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
                 board.castling_rights[2] = false; // Black King-side
             }
         }
-    } else if board.get([BBPiece::Rook], to_index) {
+    } if board.get([BBPiece::Rook], to_index) {
         // Capturing a rook possibly on a corner square, update castling rights for the opponent
         if to_index == Squares::A1 as u8 {
             board.castling_rights[1] = false; // White Queen-side
@@ -293,6 +295,7 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
         board.fullmove_number -= 1;
     }
     board.move_color *= -1;
+    //now, board.move_color is the color of the player who moved the original piece!
 
     // Undo en passant, castling rights, and halfmove clock from state_history
     if let Some((castling_rights, en_passant, halfmove_clock)) = board.state_history.pop() {
