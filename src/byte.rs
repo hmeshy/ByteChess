@@ -9,9 +9,24 @@ pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 10000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
 /*fn main() // perft profiling debugging as necessary
 {
+    /*unsafe {
+        env::set_var("RUST_BACKTRACE", "1");
+    }*/ // debug code
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 4, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
+    let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 5, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
+    let start = std::time::Instant::now();
     println!("{}", util::perft(&mut board, 6, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
+    let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 7, false));
     let duration = start.elapsed();
     println!("perft took {} ms", duration.as_millis());
 }*/
@@ -25,6 +40,8 @@ fn main() {
     let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
+    let mut board_hist: Vec<String> = Vec::new();
+    board_hist.push(input_fen.clone());
     println!("id name ByteChess");
     println!("id author github-copilot");
     println!("uciok");
@@ -75,6 +92,9 @@ fn main() {
             }
             "go" => {           
                 // Parse time controls from the command
+                if input_fen != "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
+                    board_hist.push(input_fen.clone());
+                }
                 let mut i = 1;
                 while i < tokens.len() {
                     match tokens[i] {
@@ -118,7 +138,7 @@ fn main() {
                 let start = std::time::Instant::now();
                 let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
                 // ... your move selection logic here ...
-                let m = think(&mut board, think_time, start);
+                let m = think(&mut board, &board_hist, think_time, start);
 
                 // After move selection, update the bot's time
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -128,6 +148,7 @@ fn main() {
                 println!("info string Bot time left: {} ms", my_time);
                 // Play the first legal move (pl with legality check)
                 println!("bestmove {}", m);
+                board_hist.push(format!("{}", board));
             }
             "quit" | "exit" => {
                 break;
@@ -137,7 +158,7 @@ fn main() {
         io::stdout().flush().unwrap();
     }
 }
-fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -> util::Move {
+fn think(board: &mut board::Board, board_hist: &Vec<String>,think_time: u64, timer: std::time::Instant) -> util::Move {
     // Placeholder for thinking logic
     // This function should implement the logic to find the best move
     // based on the current board state and the given time limit.
@@ -155,11 +176,10 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -
         }
         for m in &moves
         {
-            let mut board_copy = board.clone();
-            board::make_move(&mut board_copy,&m);
-            if !board_copy.king_is_attacked(){
+            board::make_move(board,&m);
+            if !board.king_is_attacked(){
                 // move IS legal
-                let eval = -minimax(&mut board_copy, depth, 0, i32::MIN + 1, -alpha, think_time, timer);
+                let eval = -minimax(board, board_hist, depth, 0, i32::MIN + 1, -alpha, think_time, timer);
                 if timer.elapsed().as_millis() > think_time as u128 {
                     // Time is up, break the loop
                     alpha = prev_eval; // Return the previous evaluation if time is up
@@ -170,6 +190,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -
                     best_move = m.clone();
                 }
             }
+            board::undo_move(board);
         }
         println!("info score cp {} depth {} pv {} move {}", alpha, depth, best_move, best_move);
         previous_best_move = best_move.clone();
@@ -179,7 +200,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -
     }
     best_move
 }
-fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant) -> i32 {
+fn minimax(board: &mut board::Board, board_hist: &Vec<String>, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant) -> i32 {
     if depth == 0 {
         if util::perft(board, 1, true) == 0 {
             let eval = util::evaluate(board);
@@ -201,13 +222,16 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             return 0; // Stalemate
         }
     }
+    if util::is_repetition(board, board_hist) {
+        return 0; // Draw by repetition
+    }
     let mut moves = get_ordered_moves(board, false);
     for m in &moves{
         let mut board_copy = board.clone();
         board::make_move(&mut board_copy, &m);
         if !board_copy.king_is_attacked() {
             // move IS legal
-            let eval = -minimax(&mut board_copy, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
+            let eval = -minimax(&mut board_copy, board_hist, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
             if eval >= beta {
                 return beta; // Beta cut-off
             }

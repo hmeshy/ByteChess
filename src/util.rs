@@ -251,7 +251,9 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         en_passant,
         halfmove_clock,
         fullmove_number,
-        last_move: None,
+        state_history: Vec::new(),
+        move_history: Vec::new(),
+        captures_history: Vec::new(),
     }
 }
 // Print function for Board
@@ -341,6 +343,9 @@ impl std::fmt::Display for board::Board {
 // Bitboard util functions
 #[inline]
 pub(crate) fn bb_get(bb: u64, square: usize) -> bool {
+    if square >= 64 {
+        panic!("Square index out of bounds: {}", square);
+    }
     (bb & (1 << square)) != 0
 }
 #[inline]
@@ -432,7 +437,77 @@ fn get_piece_dist(moves: Vec<Move>, bd: &board::Board) -> [u32; 8] {
     }
     piece_attacks
 }
+pub fn is_repetition(board: &Board, fen_list: &[String]) -> bool {
+    let board_fen = format!("{}", board);
+    let board_parts: Vec<&str> = board_fen.split_whitespace().collect();
+    if board_parts.len() < 2 {
+        return false;
+    }
+    let board_key = format!("{} {}", board_parts[0], board_parts[1]);
+    for fen in fen_list {
+        let fen_parts: Vec<&str> = fen.split_whitespace().collect();
+        if fen_parts.len() < 2 {
+            continue;
+        }
+        let fen_key = format!("{} {}", fen_parts[0], fen_parts[1]);
+        if board_key == fen_key {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
+    let mut count = 0;
+    for m in bd.gen_moves(captures_only) {
+        let orig = bd.clone();
+        board::make_move(bd, &m);
+        if !bd.king_is_attacked() {
+            if depth > 1 {
+                count += perft(bd, depth - 1, captures_only);
+            } else {
+                count += 1;
+            }
+        }
+        board::undo_move(bd);
+        /*if orig != *bd { // debug code
+            eprintln!("Board changed after make/undo!\nOriginal:\n{}\nMove: {}\nAfter undo:\n{}", orig, m, bd);
+
+            // Compare fields and print differences
+            if orig.bitboards != bd.bitboards {
+            eprintln!("bitboards differ:\n  orig: {:?}\n  bd:   {:?}", orig.bitboards, bd.bitboards);
+            }
+            if orig.move_color != bd.move_color {
+            eprintln!("move_color differ:\n  orig: {:?}\n  bd:   {:?}", orig.move_color, bd.move_color);
+            }
+            if orig.castling_rights != bd.castling_rights {
+            eprintln!("castling_rights differ:\n  orig: {:?}\n  bd:   {:?}", orig.castling_rights, bd.castling_rights);
+            }
+            if orig.en_passant != bd.en_passant {
+            eprintln!("en_passant differ:\n  orig: {:?}\n  bd:   {:?}", orig.en_passant, bd.en_passant);
+            }
+            if orig.halfmove_clock != bd.halfmove_clock {
+            eprintln!("halfmove_clock differ:\n  orig: {:?}\n  bd:   {:?}", orig.halfmove_clock, bd.halfmove_clock);
+            }
+            if orig.fullmove_number != bd.fullmove_number {
+            eprintln!("fullmove_number differ:\n  orig: {:?}\n  bd:   {:?}", orig.fullmove_number, bd.fullmove_number);
+            }
+            if orig.state_history != bd.state_history {
+            eprintln!("state_history differ:\n  orig: {:?}\n  bd:   {:?}", orig.state_history, bd.state_history);
+            }
+            if orig.move_history != bd.move_history {
+            eprintln!("move_history differ:\n  orig: {:?}\n  bd:   {:?}", orig.move_history, bd.move_history);
+            }
+            if orig.captures_history != bd.captures_history {
+            eprintln!("captures_history differ:\n  orig: {:?}\n  bd:   {:?}", orig.captures_history, bd.captures_history);
+            }
+
+            panic!("Board state mismatch after make/undo");
+        }*/
+    }
+    count
+}
+/*pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 { //old with copying
     let mut count = 0;
     for m in bd.gen_moves(captures_only) {
         let mut bd_copy = bd.clone();
@@ -447,4 +522,4 @@ pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
         }
     }
     count
-}
+}*/

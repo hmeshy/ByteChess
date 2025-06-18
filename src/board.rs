@@ -9,7 +9,7 @@ use self::strum_macros::EnumIter;
 use self::strum::IntoEnumIterator;
 
 // Enum for bitboard piece tables
-#[derive(Copy, Clone, PartialEq, Eq, EnumIter)]
+#[derive(Copy, Clone, PartialEq, Eq, EnumIter, Debug)]
 pub enum BBPiece {
     White,
     Black,
@@ -38,14 +38,19 @@ impl BBPiece {
 
 // Board structure
 #[derive(Clone)]
+#[derive(PartialEq, Eq)]
 pub struct Board {
-    pub bitboards: [u64; 8], //8 bitboards, accessed via the enum
+    pub bitboards: [u64; 8], // 8 bitboards, accessed via the enum
     pub move_color: i8, // 1 for White, -1 for Black
     pub castling_rights: [bool; 4], // [White King, White Queen, Black King, Black Queen]
     pub en_passant: Option<usize>,
     pub halfmove_clock: u8,
     pub fullmove_number: u16,
-    pub last_move: Option<Move>,
+    pub state_history: Vec<([bool; 4], Option<usize>, u8)>,
+    // Move history: stack of all moves
+    pub move_history: Vec<Move>,
+    // Captures history: stack of (from_piece, to_piece) for each capture
+    pub captures_history: Vec<(BBPiece, BBPiece)>,
 }
 
 impl Board {
@@ -114,8 +119,15 @@ pub const STARTING_POSITION: Board = Board {
     en_passant: None,
     halfmove_clock: 0,
     fullmove_number: 1,
-    last_move: None,
+    move_history: Vec::new(),
+    captures_history: Vec::new(),
+    state_history: Vec::new(),
 };
+//info to store for unmaking moves
+//bitboards - need to undo
+//move color - just * -1
+//fullmove_number - same rules but in reverse
+//castling rights & en passant, half_move clock, move history, captured pieces - need to be stored and retrieve
 pub fn is_check(board: &mut Board) -> bool {
         // Check if the current player is in checkmate
         board.move_color = -board.move_color; // Reverse the move color to check if the opponent's king is attacked
@@ -130,7 +142,11 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     let from_index = _move.from_square();
     let to_index = _move.to_square();
     let flags = _move.flags();
-
+    board.state_history.push((
+        board.castling_rights,
+        board.en_passant,
+        board.halfmove_clock,
+    )); //update state history
     // Check if castling eligibility has changed
     // Check which piece has moved
     if board.get([BBPiece::King], from_index) {
@@ -166,15 +182,43 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
         }
     }
 
-    
-    // Zero the from_index and replace the to_index in every bitboard
-    for i in BBPiece::iter() {
-        if board.get([i], from_index) {
-            board.move_piece([i], from_index, to_index);
-        } else if board.get([i], to_index) {
-            // We are capturing from a different bitboard, clear the to square
-            board.set([i], to_index, false);
+    let mut captured: Option<(BBPiece, BBPiece)> = None;
+
+    // Handle capture and move the piece
+    for color in [BBPiece::White, BBPiece::Black] {
+        if board.get([color], to_index) {
+            // If a color bitboard has a piece on the destination, that's the color of the captured piece
+            for piece in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
+                if board.get([piece], to_index) {
+                    captured = Some((color, piece));
+                    board.set([piece], to_index, false); // Remove captured piece
+                    break;
+                }
+            }
+            // Remove the color bit as well
+            board.set([color], to_index, false);
         }
+    }
+
+    // Move the piece from from_index to to_index on its respective bitboard
+    for piece in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
+        if board.get([piece], from_index) {
+            board.set([piece], from_index, false);
+            board.set([piece], to_index, true);
+            break;
+        }
+    }
+    // Move the color bit as well
+    for color in [BBPiece::White, BBPiece::Black] {
+        if board.get([color], from_index) {
+            board.set([color], from_index, false);
+            board.set([color], to_index, true);
+            break;
+        }
+    }
+
+    if let Some(capture) = captured {
+        board.captures_history.push(capture);
     }
     if flags & 0x8 != 0 { // Pawn Promotion
         match flags & 0x3 { // Get Promotion Piece
@@ -229,7 +273,121 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     } else {
         board.halfmove_clock += 1; // Increment halfmove clock
     }
-    board.last_move = Some(*_move);
+    board.move_history.push(*_move);
+    Ok(())
+}
+pub fn undo_move(board: &mut Board) -> Result<(), String> {
+    // Pop the last move
+    let _move = match board.move_history.pop() {
+        Some(m) => m,
+        None => return Err("No move to undo".to_string()),
+    };
+
+    let from_index = _move.from_square();
+    let to_index = _move.to_square();
+    let flags = _move.flags();
+
+    // Undo move_color and fullmove_number
+    if board.move_color == Color::White as i8 {
+        // If it's white's turn now, it was black's turn before
+        board.fullmove_number -= 1;
+    }
+    board.move_color *= -1;
+
+    // Undo en passant, castling rights, and halfmove clock from state_history
+    if let Some((castling_rights, en_passant, halfmove_clock)) = board.state_history.pop() {
+        board.castling_rights = castling_rights;
+        board.en_passant = en_passant;
+        board.halfmove_clock = halfmove_clock;
+    } else {
+        return Err("No state history to undo".to_string());
+    }
+
+    // Undo pawn promotion
+    if flags & 0x8 != 0 {
+        // Remove promoted piece
+        match flags & 0x3 {
+            0 => board.set([BBPiece::Knight], to_index, false),
+            1 => board.set([BBPiece::Bishop], to_index, false),
+            2 => board.set([BBPiece::Rook], to_index, false),
+            3 => board.set([BBPiece::Queen], to_index, false),
+            _ => return Err("Invalid promotion type".to_string()),
+        }
+        // Restore pawn
+        board.set([BBPiece::Pawn], to_index, false);
+        board.set([BBPiece::Pawn], from_index, true);
+        // Restore color bit
+        if board.move_color == Color::White as i8 {
+            board.set([BBPiece::White], to_index, false);
+            board.set([BBPiece::White], from_index, true);
+        } else {
+            board.set([BBPiece::Black], to_index, false);
+            board.set([BBPiece::Black], from_index, true);
+        }
+    } else if flags == MoveFlag::EnPassant as u8 {
+        // Undo en passant capture
+        board.move_piece([BBPiece::Pawn, if board.move_color == Color::White as i8 { BBPiece::White } else { BBPiece::Black }], to_index, from_index);
+        if board.move_color == Color::White as i8 {
+            board.set([BBPiece::Black, BBPiece::Pawn], to_index.wrapping_sub(8), true);
+        } else {
+            board.set([BBPiece::White, BBPiece::Pawn], to_index.wrapping_add(8), true);
+        }
+    } else if flags & 0x2 != 0 && flags & 0xC == 0 {
+        // Undo castling
+        board.move_piece([BBPiece::King, if board.move_color == Color::White as i8 { BBPiece::White } else { BBPiece::Black }], to_index, from_index);
+        if board.move_color == Color::White as i8 {
+            board.set([BBPiece::White], to_index, false);
+            board.set([BBPiece::White], from_index, true);
+        } else {
+            board.set([BBPiece::Black], to_index, false);
+            board.set([BBPiece::Black], from_index, true);
+        }
+        // Undo rook move
+        match (from_index, to_index) {
+            (x, y) if x == Squares::E1 as u8 && y == Squares::G1 as u8 => {
+                board.move_piece([BBPiece::Rook, BBPiece::White], Squares::F1, Squares::H1);
+            }
+            (x, y) if x == Squares::E1 as u8 && y == Squares::C1 as u8 => {
+                board.move_piece([BBPiece::Rook, BBPiece::White], Squares::D1, Squares::A1);
+            }
+            (x, y) if x == Squares::E8 as u8 && y == Squares::G8 as u8 => {
+                board.move_piece([BBPiece::Rook, BBPiece::Black], Squares::F8, Squares::H8);
+            }
+            (x, y) if x == Squares::E8 as u8 && y == Squares::C8 as u8 => {
+                board.move_piece([BBPiece::Rook, BBPiece::Black], Squares::D8, Squares::A8);
+            }
+            _ => {}
+        }
+    } else {
+        // Normal move
+        for piece in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
+            if board.get([piece], to_index) {
+                board.move_piece([piece], to_index, from_index);
+                break;
+            }
+        }
+        // Move color bit
+        if board.move_color == Color::White as i8 {
+            if board.get([BBPiece::White], to_index) {
+                board.set([BBPiece::White], to_index, false);
+                board.set([BBPiece::White], from_index, true);
+            }
+        } else {
+            if board.get([BBPiece::Black], to_index) {
+                board.set([BBPiece::Black], to_index, false);
+                board.set([BBPiece::Black], from_index, true);
+            }
+        }
+    }
+
+    // Restore captured piece if there was a capture
+    if flags & (MoveFlag::Capture as u8) != 0 && flags != MoveFlag::EnPassant as u8 { //we don't store / restore en passant captures this way
+        if let Some((color, piece)) = board.captures_history.pop() {
+                board.set([piece], to_index, true);
+                board.set([color], to_index, true);
+        }
+    }
+
     Ok(())
 }
 
@@ -650,31 +808,35 @@ impl Board {
             BBPiece::White
         };
         let mut king_bb = self.combined([BBPiece::King, color_bb], true);
-        if let Some(_move) = self.last_move {
+        if let Some(_move) = self.move_history.last() {
             if _move.flags() & 0x2 != 0 && _move.flags() & 0xC == 0 { // Castling
-                // Get squares moved through
-                let from_index = _move.from_square();
-                let to_index = _move.to_square();
-                if from_index == Squares::E1 as u8 && to_index == Squares::G1 as u8 { // White King-side castle
-                    if self.square_is_attacked(Squares::E1 as usize) || self.square_is_attacked(Squares::F1 as usize) {
-                        return true;
-                    }
-                } else if from_index == Squares::E1 as u8 && to_index == Squares::C1 as u8 { // White Queen-side castle
-                    if self.square_is_attacked(Squares::E1 as usize) || self.square_is_attacked(Squares::D1 as usize) {
-                        return true;
-                    }
-                } else if from_index == Squares::E8 as u8 && to_index == Squares::G8 as u8 { // Black King-side castle
-                    if self.square_is_attacked(Squares::E8 as usize) || self.square_is_attacked(Squares::F8 as usize) {
-                        return true;
-                    } 
-                } else if from_index == Squares::E8 as u8 && to_index == Squares::C8 as u8 { // Black Queen-side castle
-                    if self.square_is_attacked(Squares::E8 as usize) || self.square_is_attacked(Squares::D8 as usize) {
-                        return true;
-                    }
+            // Get squares moved through
+            let from_index = _move.from_square();
+            let to_index = _move.to_square();
+            if from_index == Squares::E1 as u8 && to_index == Squares::G1 as u8 { // White King-side castle
+                if self.square_is_attacked(Squares::E1 as usize) || self.square_is_attacked(Squares::F1 as usize) {
+                return true;
+                }
+            } else if from_index == Squares::E1 as u8 && to_index == Squares::C1 as u8 { // White Queen-side castle
+                if self.square_is_attacked(Squares::E1 as usize) || self.square_is_attacked(Squares::D1 as usize) {
+                return true;
+                }
+            } else if from_index == Squares::E8 as u8 && to_index == Squares::G8 as u8 { // Black King-side castle
+                if self.square_is_attacked(Squares::E8 as usize) || self.square_is_attacked(Squares::F8 as usize) {
+                return true;
+                } 
+            } else if from_index == Squares::E8 as u8 && to_index == Squares::C8 as u8 { // Black Queen-side castle
+                if self.square_is_attacked(Squares::E8 as usize) || self.square_is_attacked(Squares::D8 as usize) {
+                return true;
                 }
             }
+            }
         }
-        return self.square_is_attacked(util::bb_gs_low_bit(&mut king_bb));
+        let square = util::bb_gs_low_bit(&mut king_bb);
+        if square == 64 {
+            panic!("King not found on board {}", self);
+        }
+        return self.square_is_attacked(square);
     }
     // Checks if a square is attacked
     pub fn square_is_attacked(&self, square: usize) -> bool {
