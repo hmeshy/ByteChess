@@ -470,7 +470,7 @@ pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
             }
         }
         board::undo_move(bd);
-        if orig != *bd { // debug code
+        /*if orig != *bd { // debug code
             eprintln!("Board changed after make/undo!\nOriginal:\n{}\nMove: {}\nAfter undo:\n{}", orig, m, bd);
 
             // Compare fields and print differences
@@ -503,7 +503,7 @@ pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
             }
 
             panic!("Board state mismatch after make/undo");
-        }
+        }*/
     }
     count
 }

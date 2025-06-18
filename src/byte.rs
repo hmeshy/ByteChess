@@ -43,7 +43,7 @@ fn main() {
     let stdin = io::stdin();
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    let mut my_time: u64 = 1000 * 600;      // Bot's remaining time in ms
+    let mut my_time: u64 = 1000 * 160;      // Bot's remaining time in ms
     let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
@@ -156,6 +156,7 @@ fn main() {
                 // Play the first legal move (pl with legality check)
                 println!("bestmove {}", m);
                 board_hist.push(format!("{}", board));
+                break;
             }
             "quit" | "exit" => {
                 break;
@@ -263,18 +264,19 @@ fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i3
     }
     let mut moves = get_ordered_moves(board, true);
     for m in &moves{
-        let mut board_copy = board.clone();
-        board::make_move(&mut board_copy, &m);
-        if !board_copy.king_is_attacked() {
+        board::make_move(board, &m);
+        if !board.king_is_attacked() {
             // move IS legal
-            let eval = -minimax_captures(&mut board_copy, depth_searched + 1, -beta, -alpha, !call_color);
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, !call_color);
             if eval >= beta {
+                board::undo_move(board);
                 return beta; // Beta cut-off
             }
             if eval > alpha {
                 alpha = eval; // Update alpha
             }
         }
+        board::undo_move(board);
     }
     alpha
 }
