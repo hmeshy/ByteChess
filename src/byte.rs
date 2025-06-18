@@ -156,7 +156,6 @@ fn main() {
                 // Play the first legal move (pl with legality check)
                 println!("bestmove {}", m);
                 board_hist.push(format!("{}", board));
-                break;
             }
             "quit" | "exit" => {
                 break;
