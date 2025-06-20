@@ -1,26 +1,54 @@
 #![allow(unused)]
 use std::env;
 use std::fmt::Display;
-
-use crate::util::get_ordered_moves;
 mod board;
 mod util;
-pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 10000];
+pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
+/*fn main()
+{
+    for sq in 0..64 {
+        let rank = sq / 8;
+        let file = sq % 8;
+        let mut attacks = 0u64;
+        for &(dr, df) in &[
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+        ] {
+            let r = rank as i8 + dr;
+            let f = file as i8 + df;
+            if r >= 0 && r < 8 && f >= 0 && f < 8 {
+                let target = (r * 8 + f) as u64;
+                attacks |= 1u64 << target;
+            }
+        }
+        print!("{:#018x}, ", attacks);
+        if sq % 8 == 7 { println!(); }
+    }
+}*/
 /*fn main() // perft profiling debugging as necessary
 {
     unsafe {
         env::set_var("RUST_BACKTRACE", "1");
     } // debug code
-    let mut board = util::board_from_fen("r3k2r/qp2bpp1/p2p4/N2Pp1P1/P4n2/5P2/1PPQB3/R3K2R b KQkq - 0 20");
-    println!("{}", board);
-    let legal_moves = board.gen_moves(false);
-    let found = legal_moves.iter().find(|m| format!("{}", m) == "h8h1");
-    if let Some(m) = found {
-        board::make_move(&mut board, m).unwrap();
-    }
-    println!("{}", board);
-    /*let start = std::time::Instant::now();
+    let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 1, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
+    /*for _move in board.moves.iter_mut()
+    {
+        println!("{}",_move);
+    }*/
+    let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 2, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
+    let start = std::time::Instant::now();
+    println!("{}", util::perft(&mut board, 3, false));
+    let duration = start.elapsed();
+    println!("perft took {} ms", duration.as_millis());
+    let start = std::time::Instant::now();
     println!("{}", util::perft(&mut board, 4, false));
     let duration = start.elapsed();
     println!("perft took {} ms", duration.as_millis());
@@ -35,7 +63,7 @@ pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
     let start = std::time::Instant::now();
     println!("{}", util::perft(&mut board, 7, false));
     let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());*/
+    println!("perft took {} ms", duration.as_millis());
 }*/
 
 fn main() {
@@ -50,7 +78,7 @@ fn main() {
     let mut board_hist: Vec<String> = Vec::new();
     board_hist.push(input_fen.clone());
     println!("id name ByteChess");
-    println!("id author github-copilot");
+    println!("id author H&LM");
     println!("uciok");
 
     for line in stdin.lock().lines() {
@@ -61,7 +89,7 @@ fn main() {
         match tokens[0] {
             "uci" => {
                 println!("id name ByteChess");
-                println!("id author github-copilot");
+                println!("id author H&LM");
                 println!("uciok");
             }
             "isready" => {
@@ -91,7 +119,8 @@ fn main() {
                 // Play moves if present
                 if let Some(moves_idx) = tokens.iter().position(|&s| s == "moves") {
                     for mv in &tokens[moves_idx + 1..] {
-                        let legal_moves = board.gen_moves(false);
+                        board.gen_moves(false,false); //we can trust the move to compare against to be legal!
+                        let legal_moves = board.moves;
                         let found = legal_moves.iter().find(|m| format!("{}", m) == *mv);
                         if let Some(m) = found {
                             board::make_move(&mut board, m).unwrap();
@@ -170,32 +199,30 @@ fn think(board: &mut board::Board, board_hist: &Vec<String>,think_time: u64, tim
     // This function should implement the logic to find the best move
     // based on the current board state and the given time limit.
     let mut depth = 0;
-    let mut moves = get_ordered_moves(board, false);
+    let mut moves = board.get_ordered_moves(false,true,false);
     let mut alpha = i32::MIN + 1;
-    let mut best_move = moves[0].clone(); // Return the first legal move as a placeholder
+    let mut best_move = moves.first().clone(); // Return the first legal move as a placeholder
     let mut previous_best_move = best_move.clone();
     let mut prev_eval = alpha;
     while timer.elapsed().as_millis() < think_time as u128 {
         // remove and insert previous best move at the beginning of moves
-        if let Some(pos) = moves.iter().position(|m| *m == previous_best_move) {
+        let pos = moves.iter().position(|m| *m == previous_best_move);
+        if let Some(pos) = pos {
             let mv = moves.remove(pos);
             moves.insert(0, mv);
         }
-        for m in &moves
+        for m in moves.iter()
         {
             board::make_move(board,&m);
-            if !board.king_is_attacked(){
-                // move IS legal
-                let eval = -minimax(board, board_hist, depth, 0, i32::MIN + 1, -alpha, think_time, timer);
-                if timer.elapsed().as_millis() > think_time as u128 {
-                    // Time is up, break the loop
-                    alpha = prev_eval; // Return the previous evaluation if time is up
-                    break;
-                }
-                if eval > alpha {
-                    alpha = eval;
-                    best_move = m.clone();
-                }
+            let eval = -minimax(board, board_hist, depth, 0, i32::MIN + 1, -alpha, think_time, timer);
+            if timer.elapsed().as_millis() > think_time as u128 {
+                // Time is up, break the loop
+                alpha = prev_eval; // Return the previous evaluation if time is up
+                break;
+            }
+            if eval > alpha {
+                alpha = eval;
+                best_move = m.clone();
             }
             board::undo_move(board);
         }
@@ -222,21 +249,16 @@ fn minimax(board: &mut board::Board, board_hist: &Vec<String>, depth: i32, depth
             return minimax_captures(board, depth_searched, alpha, beta, true);
         }
     }
-    if util::perft(board, 1, false) == 0 {
-        if board::is_check(board) {
-            return (depth_searched - 100000); // Checkmate
-        } else {
-            return 0; // Stalemate
-        }
-    }
+    let mut moves = board.get_ordered_moves(false,false,false);
     if util::is_repetition(board, board_hist) {
         return 0; // Draw by repetition
     }
-    let mut moves = get_ordered_moves(board, false);
-    for m in &moves{
+    let mut has_moves = false;
+    for m in moves.iter(){
         board::make_move(board, &m);
-        if !board.king_is_attacked() {
-            // move IS legal
+        if !board.king_is_attacked()
+        {
+            has_moves = true;
             let eval = -minimax(board, board_hist, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
             if eval >= beta {
                 board::undo_move(board);
@@ -252,28 +274,36 @@ fn minimax(board: &mut board::Board, board_hist: &Vec<String>, depth: i32, depth
         }
         board::undo_move(board);
     }
+    if !has_moves {
+        if board::is_check(board) {
+            return (depth_searched - 100000); // Checkmate
+        } else {
+            return 0; // Stalemate
+        }
+    }
     alpha
 }
-fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, call_color: bool) -> i32 {
-    let eval = util::evaluate(&board);
+fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, first_call: bool) -> i32 {
+    let eval = util::evaluate(board);
     if eval >= beta {
         return beta;
     } else if eval >= alpha {
         alpha = eval;
     }
-    let mut moves = get_ordered_moves(board, true);
-    for m in &moves{
+    let mut moves = board.get_ordered_moves(true,false,true);
+    if !first_call
+    {
+        moves = board.get_ordered_moves(false,false,true); //no need for legal move checking in this deep & controlled search
+    }
+    for m in moves.iter(){
         board::make_move(board, &m);
-        if !board.king_is_attacked() {
-            // move IS legal
-            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, !call_color);
-            if eval >= beta {
-                board::undo_move(board);
-                return beta; // Beta cut-off
-            }
-            if eval > alpha {
-                alpha = eval; // Update alpha
-            }
+        let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, false);
+        if eval >= beta {
+            board::undo_move(board);
+            return beta; // Beta cut-off
+        }
+        if eval > alpha {
+            alpha = eval; // Update alpha
         }
         board::undo_move(board);
     }

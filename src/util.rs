@@ -36,33 +36,177 @@ pub enum MoveFlag {
 pub struct Move {
     pub info: u16, // 6 bits for from and to, 4 bits for extra info (promotion, capture, en passant, castling)
 }
-fn captured_piece(board: &Board, m: &Move) -> Option<BBPiece> {
-    if m.flags() & MoveFlag::Capture as u8 != 0 {
-        let to_square = m.to_square() as usize;
-        for (i, &bb) in board.bitboards.iter().enumerate() {
-            if i == BBPiece::White as usize || i == BBPiece::Black as usize {
-                continue; // Skip color bitboards
-            } else if bb_get(bb, to_square) {
-                return Some(BBPiece::from(i));
+#[derive(Copy, Clone, Debug)]
+#[derive(PartialEq, Eq)]
+pub struct MoveStack {
+    data: [Option<Move>; 218],
+    len: usize,
+}
+impl MoveStack {
+    pub fn new() -> Self {
+        Self {
+            data: [None; 218],
+            len: 0,
+        }
+    }
+    pub fn clear(&mut self) {
+        for i in 0..self.len {
+            self.data[i] = None;
+        }
+        self.len = 0;
+    }
+    pub fn extend<I: IntoIterator<Item = Move>>(&mut self, iter: I) {
+        for mv in iter {
+            if self.len < self.data.len() {
+                self.data[self.len] = Some(mv);
+                self.len += 1;
+            } else {
+                break; // Stop if capacity is reached
             }
         }
     }
-    None
+    /// Clears the stack and returns a Vec of all moves that were present.
+    pub fn take_all(&mut self) -> Vec<Move> {
+        let mut moves = Vec::with_capacity(self.len);
+        for i in 0..self.len {
+            if let Some(mv) = self.data[i].take() {
+                moves.push(mv);
+            }
+        }
+        self.len = 0;
+        moves
+    }
+    pub fn first(&self) -> Move {
+        self.data[0].unwrap_or_else(|| Move { info: 0 })
+    }
+
+    pub fn push(&mut self, mv: Move) -> Result<(), &'static str> {
+        if self.len < 218 {
+            self.data[self.len] = Some(mv);
+            self.len += 1;
+            Ok(())
+        } else {
+            Err("Stack full")
+        }
+    }
+
+    pub fn pop(&mut self) -> Move {
+        if self.len > 0 {
+            self.len -= 1;
+            self.data[self.len].take().unwrap_or_else(|| Move { info: 0 })
+        } else {
+            Move{info:0}
+        }
+    }
+        /// Inserts a move at the given index, shifting elements to the right.
+    pub fn insert(&mut self, index: usize, mv: Move) -> Result<(), &'static str> {
+        if self.len >= self.data.len() {
+            return Err("MoveStack is full");
+        }
+        if index > self.len {
+            return Err("Index out of bounds");
+        }
+        // Shift elements to the right
+        for i in (index..self.len).rev() {
+            self.data[i + 1] = self.data[i].take();
+        }
+        self.data[index] = Some(mv);
+        self.len += 1;
+        Ok(())
+    }
+
+    /// Removes and returns the move at the given index, shifting elements to the left.
+    pub fn remove(&mut self, index: usize) -> Move {
+        if index >= self.len {
+            return Move{info: 0};
+        }
+        let removed = self.data[index].take();
+        for i in index..self.len - 1 {
+            self.data[i] = self.data[i + 1].take();
+        }
+        self.len -= 1;
+        self.data[self.len] = None;
+        removed.unwrap_or_else(|| Move { info: 0 })
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &Move> {
+        self.data[..self.len]
+            .iter()
+            .filter_map(|opt| opt.as_ref())
+    }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Move> {
+        self.data[..self.len]
+            .iter_mut()
+            .filter_map(|opt| opt.as_mut())
+    }
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&Move) -> bool,
+    {
+        let mut new_len = 0;
+        for i in 0..self.len {
+            if let Some(ref mv) = self.data[i] {
+                if f(mv) {
+                    // Move the element to the new position if needed
+                    if new_len != i {
+                        self.data[new_len] = self.data[i].take();
+                    }
+                    new_len += 1;
+                }
+            }
+        }
+        // Set the rest to None
+        for i in new_len..self.len {
+            self.data[i] = None;
+        }
+        self.len = new_len;
+    }
+    pub fn sort_by<F>(&mut self, mut compare: F)
+    where
+        F: FnMut(&Move, &Move) -> std::cmp::Ordering,
+    {
+        // Collect all Some(Move) into a Vec
+        let mut moves: Vec<Move> = self
+            .data[..self.len]
+            .iter()
+            .filter_map(|opt| opt.clone())
+            .collect();
+
+        // Sort the Vec
+        moves.sort_by(|a, b| compare(a, b));
+
+        // Write sorted moves back into the array
+        for (i, mv) in moves.into_iter().enumerate() {
+            self.data[i] = Some(mv);
+        }
+        // Set any remaining slots to None (shouldn't be needed if len is unchanged)
+        for i in self.len..self.data.len() {
+            self.data[i] = None;
+        }
+    }
+    pub fn order_by_capture_value<F>(&mut self, mut captured_piece: F)
+    where
+        F: FnMut(&Move) -> Option<BBPiece>,
+    {
+        self.sort_by(|a, b| {
+            let value_a = captured_piece(a)
+                .map(|piece| PIECE_VALUES[piece as usize])
+                .unwrap_or(0);
+            let value_b = captured_piece(b)
+                .map(|piece| PIECE_VALUES[piece as usize])
+                .unwrap_or(0);
+            value_b.cmp(&value_a)
+        });
+    }
 }
 
-pub fn get_ordered_moves(board: &Board, captures_only: bool) -> Vec<Move> {
-    let mut moves = board.gen_moves(captures_only);
-    moves.sort_by(|a, b| {
-        let value_a = captured_piece(&board, a)
-            .map(|piece| PIECE_VALUES[piece as usize])
-            .unwrap_or(0);
-        let value_b = captured_piece(&board, b)
-            .map(|piece| PIECE_VALUES[piece as usize])
-            .unwrap_or(0);
-        value_b.cmp(&value_a)
-    });
-    moves
-}
 impl std::fmt::Display for Move {
     /// Displays the move in UCI format (e.g., "a2a4")
      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -251,6 +395,7 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         en_passant,
         halfmove_clock,
         fullmove_number,
+        moves: MoveStack::new(),
         state_history: Vec::new(),
         move_history: Vec::new(),
         captures_history: Vec::new(),
@@ -393,10 +538,10 @@ pub fn evaluate(board: &board::Board) -> i32 {
     let mut b_board = board.clone();
     w_board.move_color = 1; // Set to white for evaluation
     b_board.move_color = -1; // Set to black for evaluation
-    let w_moves = w_board.gen_moves(false);
-    let b_moves = b_board.gen_moves(false);
-    let w_attacks = get_piece_dist(w_moves, &w_board);
-    let b_attacks = get_piece_dist(b_moves, &b_board);
+    w_board.gen_moves(false,false); //we could consider looking for pnly legal moves too, depending on the performance vs eval penalty
+    b_board.gen_moves(false,false);
+    let w_attacks = get_piece_dist(w_board.moves, &w_board);
+    let b_attacks = get_piece_dist(b_board.moves, &b_board);
     for i in 0..12{
         // for now piece values, next mobility too!
         let piece = BBPiece::from((i%6)+2);
@@ -420,9 +565,9 @@ pub fn evaluate(board: &board::Board) -> i32 {
     }
     score * board.move_color as i32 // Adjust score based on the current player's color
 }
-fn get_piece_dist(moves: Vec<Move>, bd: &board::Board) -> [u32; 8] {
+fn get_piece_dist(moves: MoveStack, bd: &board::Board) -> [u32; 8] {
     let mut piece_attacks = [0u32; 8];
-    for m in moves {
+    for m in moves.iter() {
         let from_square = m.from_square() as usize;
         // find which piece is moving
         let mut piece = BBPiece::Pawn;
@@ -459,15 +604,19 @@ pub fn is_repetition(board: &Board, fen_list: &[String]) -> bool {
 
 pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
     let mut count = 0;
-    for m in bd.gen_moves(captures_only) {
+    bd.gen_moves(true,captures_only);
+    let moves = bd.moves;
+    if depth <= 1
+    {
+        return moves.len() as u64
+    }
+    for m in moves.iter() {
         let orig = bd.clone();
-        board::make_move(bd, &m);
-        if !bd.king_is_attacked() {
-            if depth > 1 {
-                count += perft(bd, depth - 1, captures_only);
-            } else {
-                count += 1;
-            }
+        board::make_move(bd, m);
+        if depth > 1 {
+            count += perft(bd, depth - 1, captures_only);
+        } else {
+            count += 1;
         }
         board::undo_move(bd);
         /*if orig != *bd { // debug code
