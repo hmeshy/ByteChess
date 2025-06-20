@@ -3,6 +3,7 @@ extern crate strum_macros;
 
 use std::u8::MAX;
 
+use crate::magic;
 use crate::util;
 use crate::util::{Color,Move,MoveFlag,Squares};
 use self::strum_macros::EnumIter;
@@ -394,7 +395,22 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
 
     Ok(())
 }
-
+fn rook_attacks(square: usize, occupancy: u64) -> u64
+{
+    let magic = &magic::ROOK_MAGICS[square];
+    let blockers = occupancy & magic.mask;
+    let hash = ((blockers.wrapping_mul(magic.magic))>> magic.shift) as usize;
+    let index = hash as usize + magic.offset;
+    magic::ROOK_ATTACKS[index]
+}
+fn bishop_attacks(square: usize, occupancy: u64) -> u64
+{
+    let magic = &magic::BISHOP_MAGICS[square];
+    let blockers = occupancy & magic.mask;
+    let hash = ((blockers.wrapping_mul(magic.magic))>> magic.shift) as usize;
+    let index = hash as usize + magic.offset;
+    magic::BISHOP_ATTACKS[index]
+}
 impl Board {
     pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool) -> util::MoveStack {
         if !is_generated{
@@ -860,132 +876,32 @@ impl Board {
         } else {
             BBPiece::Black
         };
-        let rank = idx / 8;
-        let file = idx % 8;
+        let own_pieces = self.bitboards[color_bb as usize];
+        let opp_pieces = self.bitboards[1 - (color_bb as usize)];
         let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+
+        let mut attacks = 0u64;
         if orth {
-            // Left moves
-            for f in (0..file).rev() {
-                let target_idx = rank * 8 + f;
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                        // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only, piece);
-                    }
-                    break; // Stop sliding in this direction
-                } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only, piece);
-                }
-            }
-            // Right moves
-            for f in (file + 1)..8 {
-                let target_idx = rank * 8 + f;
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                        // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only, piece);
-                    }
-                    break; // Stop sliding in this direction
-                } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only, piece);
-                }
-            }
-            // Down moves
-            for r in (0..rank).rev() {
-                let target_idx = r * 8 + file;
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                        // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only, piece);
-                    }
-                    break; // Stop sliding in this direction
-                } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only, piece);
-                }
-            }
-            // Up moves
-            for r in (rank + 1)..8 {
-                let target_idx = r * 8 + file;
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                        // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
-                    }
-                    break; // Stop sliding in this direction
-                } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
-                }
-            }
+            attacks |= rook_attacks(idx, blockers);
         }
         if diag {
-            // Up-Right moves
-            for i in 1..8 {
-                let target_idx = (rank + i) * 8 + (file + i);
-                if target_idx >= 64 || (file + i) >= 8 { break; } // Out of bounds
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                        // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
-                    }
-                    break; // Stop sliding in this direction
-                } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
-                }
-            }
-            // Up-Left moves
-            for i in 1..8 {
-                if file < i { break; } // Out of bounds
-                let target_idx = (rank + i) * 8 + (file - i);
-                if target_idx >= 64 { break; } // Out of bounds
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                        // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
-                    }
-                    break; // Stop sliding in this direction
-                } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
-                }
-            }
-            if rank > 0 {
-                // Down-Right moves
-                for i in 1..8 {
-                    if rank < i { break; } // Out of bounds
-                    let target_idx = (rank - i) * 8 + (file + i);
-                    if (file + i) >= 8 || target_idx >= 64 { break; } // Out of bounds
-                    if util::bb_get(blockers, target_idx) {
-                        // Blocked by a piece
-                        if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                            // Capture opponent piece
-                            self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
-                        }
-                        break; // Stop sliding in this direction
-                    } else {
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
-                    }
-                }
-                // Down-Left moves
-                for i in 1..8 {
-                    if file < i || rank < i { break; } // Out of bounds
-                    let target_idx = (rank - i) * 8 + (file - i);
-                    if util::bb_get(blockers, target_idx) {
-                        // Blocked by a piece
-                        if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
-                            // Capture opponent piece
-                            self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
-                        }
-                        break; // Stop sliding in this direction
-                    } else {
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
-                    }
-                }
-            }
+            attacks |= bishop_attacks(idx, blockers);
+        }
+
+        // Remove own pieces from attack set
+        let targets = attacks & !own_pieces;
+
+        // Iterate over all target squares
+        let mut targets_bb = targets;
+        while targets_bb != 0 {
+            let to = targets_bb.trailing_zeros() as usize;
+            let flag = if (opp_pieces & (1u64 << to)) != 0 {
+                MoveFlag::Capture as u8
+            } else {
+                MoveFlag::Quiet as u8
+            };
+            self.add_move(&Move::from_parts(idx as u8, to as u8, flag), legal_only, piece);
+            targets_bb &= targets_bb - 1; // Clear the lowest set bit
         }
     }
     pub fn king_is_attacked(&self) -> bool {
@@ -1068,126 +984,17 @@ impl Board {
         {
             return true
         }
-        // Check for sliding piece attacks (Bishop, Rook, Queen)
-        // Left moves
-        for f in (0..file).rev() {
-            let target_idx = rank * 8 + f;
-            if util::bb_get(blockers, target_idx) {
-                // Blocked by a piece
-                if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                    // Check if rook or queen
-                    if self.get([BBPiece::Rook], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                        return true
-                    }
-                }
-                break; // Stop sliding in this direction
-            } 
+        let rook_attackers = self.bitboards[BBPiece::Rook as usize] | self.bitboards[BBPiece::Queen as usize];
+        let rook_attacks = rook_attacks(square, blockers) & self.bitboards[color_bb as usize] & rook_attackers;
+        if rook_attacks != 0 {
+            return true;
         }
-        // Right moves
-        for f in (file + 1)..8 {
-            let target_idx = rank * 8 + f;
-            if util::bb_get(blockers, target_idx) {
-                // Blocked by a piece
-                if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                    // Check if rook or queen
-                    if self.get([BBPiece::Rook], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                        return true
-                    }
-                }
-                break; // Stop sliding in this direction
-            } 
-        }
-        // Down moves
-        for r in (0..rank).rev() {
-            let target_idx = r * 8 + file;
-            if util::bb_get(blockers, target_idx) {
-                // Blocked by a piece
-                if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                    // Check if rook or queen
-                    if self.get([BBPiece::Rook], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                        return true
-                    }
-                }
-                break; // Stop sliding in this direction
-            } 
-        }
-        // Up moves
-        for r in (rank + 1)..8 {
-            let target_idx = r * 8 + file;
-            if util::bb_get(blockers, target_idx) {
-                // Blocked by a piece
-                if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                    // Check if rook or queen
-                    if self.get([BBPiece::Rook], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                        return true
-                    }
-                }
-                break; // Stop sliding in this direction
-            } 
-        }
-        // Up-Right moves
-        for i in 1..8 {
-            let target_idx = (rank + i) * 8 + (file + i);
-            if target_idx >= 64 || (file + i) >= 8 { break; } // Out of bounds
-            if util::bb_get(blockers, target_idx) {
-                // Blocked by a piece
-                if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                    // Check if rook or queen
-                    if self.get([BBPiece::Bishop], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                        return true
-                    }
-                }
-                break; // Stop sliding in this direction
-            } 
-        }
-        // Up-Left moves
-        for i in 1..8 {
-            if file < i { break; } // Out of bounds
-            let target_idx = (rank + i) * 8 + (file - i);
-            if target_idx >= 64 { break; } // Out of bounds
-            if util::bb_get(blockers, target_idx) {
-                // Blocked by a piece
-                if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                    // Check if rook or queen
-                    if self.get([BBPiece::Bishop], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                        return true
-                    }
-                }
-                break; // Stop sliding in this direction
-            } 
-        }
-        if rank > 0 {
-            // Down-Right moves
-            for i in 1..8 {
-                if rank < i { break; } // Out of bounds
-                let target_idx = (rank - i) * 8 + (file + i);
-                if (file + i) >= 8 || target_idx >= 64 { break; } // Out of bounds
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                        // Check if rook or queen
-                        if self.get([BBPiece::Bishop], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                            return true
-                        }
-                    }
-                    break; // Stop sliding in this direction
-                } 
-            }
-            // Down-Left moves
-            for i in 1..8 {
-                if file < i || rank < i { break; } // Out of bounds
-                let target_idx = (rank - i) * 8 + (file - i);
-                if util::bb_get(blockers, target_idx) {
-                    // Blocked by a piece
-                    if util::bb_get(self.bitboards[color_bb as usize], target_idx) {
-                        // Check if rook or queen
-                        if self.get([BBPiece::Bishop], target_idx) || self.get([BBPiece::Queen], target_idx) {
-                            return true
-                        }
-                    }
-                    break; // Stop sliding in this direction
-                } 
-            }
+
+        // Bishop/Queen (diagonal)
+        let bishop_attackers = self.bitboards[BBPiece::Bishop as usize] | self.bitboards[BBPiece::Queen as usize];
+        let bishop_attacks = bishop_attacks(square, blockers) & self.bitboards[color_bb as usize] & bishop_attackers;
+        if bishop_attacks != 0 {
+            return true;
         }
         if KING_ATTACKS[square] & self.bitboards[color_bb as usize] & self.bitboards[BBPiece::King as usize] != 0
         {
