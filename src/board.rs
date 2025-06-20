@@ -1033,28 +1033,27 @@ impl Board {
         let file = square % 8;
         let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
         // Check for pawn attacks
-        let sq_bb = 1u64 << square;
         if self.move_color == Color::White as i8 {
-            // White pawns attack up-left and up-right (from their perspective)
-            let white_pawns = self.bitboards[BBPiece::Pawn as usize] & self.bitboards[BBPiece::White as usize];
-            // Up-left: attacked if a white pawn is on square -9
-            if (white_pawns << 9) & sq_bb != 0 {
-                return true;
+            // White pawns attack up-left and up-right
+            if file > 0 && rank > 0 && self.get([BBPiece::Pawn, BBPiece::White], square - 9) {
+                return true
+
+
             }
-            // Up-right: attacked if a white pawn is on square -7
-            if (white_pawns << 7) & sq_bb != 0 {
-                return true;
+            if file < 7 && rank > 0 && self.get([BBPiece::Pawn, BBPiece::White], square - 7) {
+                return true
+
             }
         } else {
             // Black pawns attack down-left and down-right
-            let black_pawns = self.bitboards[BBPiece::Pawn as usize] & self.bitboards[BBPiece::Black as usize];
-            // Down-left: attacked if a black pawn is on square +7
-            if (black_pawns >> 7) & sq_bb != 0 {
-                return true;
+            if file > 0 && rank < 7 && self.get([BBPiece::Pawn, BBPiece::Black], square + 7) {
+                return true
+
+
             }
-            // Down-right: attacked if a black pawn is on square +9
-            if (black_pawns >> 9) & sq_bb != 0 {
-                return true;
+            if file < 7 && rank < 7 && self.get([BBPiece::Pawn, BBPiece::Black], square + 9) {
+                return true
+
             }
         }
         // Check for knight attacks
