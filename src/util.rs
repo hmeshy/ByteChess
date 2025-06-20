@@ -329,6 +329,7 @@ pub(crate) fn piece_to_fen(piece: BBPiece, color: Color) -> char {
 pub fn board_from_fen(fen: &str) -> board::Board {
     use crate::board::{Board, BBPiece};
     let mut bitboards = [0u64; 8];
+    let mut piece_moves = [0u32; 8];
     let mut castling_rights = [false; 4];
     let mut en_passant = None;
     let mut halfmove_clock = 0u8;
@@ -396,6 +397,7 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         halfmove_clock,
         fullmove_number,
         moves: MoveStack::new(),
+        piece_moves,
         state_history: Vec::new(),
         move_history: Vec::new(),
         captures_history: Vec::new(),
@@ -534,14 +536,24 @@ pub(crate) fn bb_print(bb: u64) -> () {
 
 pub fn evaluate(board: &board::Board) -> i32 {
     let mut score = 0;
-    let mut w_board = board.clone();
-    let mut b_board = board.clone();
-    w_board.move_color = 1; // Set to white for evaluation
-    b_board.move_color = -1; // Set to black for evaluation
-    w_board.gen_moves(false,false); //we could consider looking for pnly legal moves too, depending on the performance vs eval penalty
-    b_board.gen_moves(false,false);
-    let w_attacks = get_piece_dist(w_board.moves, &w_board);
-    let b_attacks = get_piece_dist(b_board.moves, &b_board);
+    // Use the original board for the current move color
+    let (w_attacks, b_attacks) = if board.move_color == 1 {
+        // White to move: use board for white, clone for black
+        let mut b_board = board.clone();
+        b_board.move_color = -1;
+        b_board.gen_moves(false, false);
+        let w_attacks = board.piece_moves;
+        let b_attacks = b_board.piece_moves;
+        (w_attacks, b_attacks)
+    } else {
+        // Black to move: use board for black, clone for white
+        let mut w_board = board.clone();
+        w_board.move_color = 1;
+        w_board.gen_moves(false, false);
+        let w_attacks = w_board.piece_moves;
+        let b_attacks = board.piece_moves;
+        (w_attacks, b_attacks)
+    };
     for i in 0..12{
         // for now piece values, next mobility too!
         let piece = BBPiece::from((i%6)+2);
@@ -564,23 +576,6 @@ pub fn evaluate(board: &board::Board) -> i32 {
         partial_score = 0; // Reset for next piece
     }
     score * board.move_color as i32 // Adjust score based on the current player's color
-}
-fn get_piece_dist(moves: MoveStack, bd: &board::Board) -> [u32; 8] {
-    let mut piece_attacks = [0u32; 8];
-    for m in moves.iter() {
-        let from_square = m.from_square() as usize;
-        // find which piece is moving
-        let mut piece = BBPiece::Pawn;
-        for i in 2..8 {
-            if bb_get(bd.bitboards[i], from_square) {
-                piece = BBPiece::from(i);
-                break;
-            }
-        }
-        let piece_index = (piece as usize);
-        piece_attacks[piece_index] += 1;
-    }
-    piece_attacks
 }
 pub fn is_repetition(board: &Board, fen_list: &[String]) -> bool {
     let board_fen = format!("{}", board);

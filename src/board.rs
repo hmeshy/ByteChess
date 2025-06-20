@@ -66,6 +66,7 @@ pub struct Board {
     pub halfmove_clock: u8,
     pub fullmove_number: u16,
     pub moves: util::MoveStack,
+    pub piece_moves: [u32; 8],
     pub state_history: Vec<([bool; 4], Option<usize>, u8)>,
     // Move history: stack of all moves
     pub move_history: Vec<Move>,
@@ -423,15 +424,21 @@ impl Board {
         board::undo_move(self);
         is_legal
     }
-    fn add_move(&mut self, m: &Move, legal_only: bool)
+    fn add_move(&mut self, m: &Move, legal_only: bool, piece: usize)
     {
         if !legal_only || self.is_legal_move(m)
         {
             self.moves.push(*m);
+            self.piece_moves[piece] += 1;
         }
+    }
+    pub fn captures_only(&mut self)
+    {
+        self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
     }
     pub fn gen_moves(&mut self, legal_only: bool, captures_only: bool) {
         self.moves.clear();
+        self.piece_moves = [0u32; 8];
         let white = self.move_color == Color::White as i8;
         let color_bb: BBPiece = if white {
             BBPiece::White
@@ -478,29 +485,29 @@ impl Board {
                                 to_sq - 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::QueenPromotion as u8,
-                                ), legal_only); 
+                                ), legal_only, BBPiece::Pawn as usize); 
                                 self.add_move(&Move::from_parts(
                                 to_sq - 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::RookPromotion as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::KnightPromotion as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::BishopPromotion as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                             else {
                                 self.add_move(&Move::from_parts(
                                 to_sq - 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::Quiet as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
 
                         }
@@ -511,7 +518,7 @@ impl Board {
                                 to_sq - 16 as u8,
                                 to_sq as u8,
                                 MoveFlag::DoublePush as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                         }
                         while captures_left != 0
                         {
@@ -522,29 +529,29 @@ impl Board {
                                 to_sq - 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::QueenPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::RookPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::KnightPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::BishopPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                             else {
                                 self.add_move(&Move::from_parts(
                                 to_sq - 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::Capture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                         }
                         while captures_right != 0
@@ -556,29 +563,29 @@ impl Board {
                                 to_sq - 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::QueenPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::RookPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::KnightPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq - 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::BishopPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                             else {
                                 self.add_move(&Move::from_parts(
                                 to_sq - 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::Capture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                         }
                         while en_passant_left != 0
@@ -588,7 +595,7 @@ impl Board {
                                 to_sq - 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::EnPassant as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                         }
                         while en_passant_right != 0
                         {
@@ -597,7 +604,7 @@ impl Board {
                                 to_sq - 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::EnPassant as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                         }
                     }
                     else {
@@ -623,29 +630,29 @@ impl Board {
                                 to_sq + 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::QueenPromotion as u8,
-                                ), legal_only); 
+                                ), legal_only, BBPiece::Pawn as usize); 
                                 self.add_move(&Move::from_parts(
                                 to_sq + 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::RookPromotion as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::KnightPromotion as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::BishopPromotion as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                             else {
                                 self.add_move(&Move::from_parts(
                                 to_sq + 8 as u8,
                                 to_sq as u8,
                                 MoveFlag::Quiet as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
 
                         }
@@ -656,7 +663,7 @@ impl Board {
                                 to_sq + 16 as u8,
                                 to_sq as u8,
                                 MoveFlag::DoublePush as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                         }
                         while captures_left != 0
                         {
@@ -667,29 +674,29 @@ impl Board {
                                 to_sq + 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::QueenPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::RookPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::KnightPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::BishopPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                             else {
                                 self.add_move(&Move::from_parts(
                                 to_sq + 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::Capture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                         }
                         while captures_right != 0
@@ -701,29 +708,29 @@ impl Board {
                                 to_sq + 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::QueenPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::RookPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::KnightPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                                 self.add_move(&Move::from_parts(
                                 to_sq + 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::BishopPromoCapture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                             else {
                                 self.add_move(&Move::from_parts(
                                 to_sq + 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::Capture as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                             }
                         }
                         while en_passant_left != 0
@@ -733,7 +740,7 @@ impl Board {
                                 to_sq + 7 as u8,
                                 to_sq as u8,
                                 MoveFlag::EnPassant as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                         }
                         while en_passant_right != 0
                         {
@@ -742,7 +749,7 @@ impl Board {
                                 to_sq + 9 as u8,
                                 to_sq as u8,
                                 MoveFlag::EnPassant as u8,
-                                ), legal_only);
+                                ), legal_only, BBPiece::Pawn as usize);
                         }
                     }
                 }
@@ -762,7 +769,7 @@ impl Board {
                                         _square as u8,
                                         move_square as u8,
                                         flags,
-                                    ), legal_only);
+                                    ), legal_only, BBPiece::Knight as usize);
                                     move_square = util::bb_gs_low_bit(&mut attacks);
                                 }
                         _square = util::bb_gs_low_bit(&mut pc_bb);
@@ -773,7 +780,7 @@ impl Board {
                     // Queen move gen but just diagonals
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        self.gen_sliding_moves(_square as usize, legal_only, false, true);
+                        self.gen_sliding_moves(_square as usize, legal_only, false, true, BBPiece::Bishop as usize);
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
@@ -782,7 +789,7 @@ impl Board {
                     // Queen move gen but just horizontals
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        self.gen_sliding_moves(_square as usize, legal_only, true, false);
+                        self.gen_sliding_moves(_square as usize, legal_only, true, false, BBPiece::Rook as usize);
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
@@ -793,7 +800,7 @@ impl Board {
                     // If hitting a piece, check if it's an opponent piece to capture
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        self.gen_sliding_moves(_square as usize, legal_only, true, true);
+                        self.gen_sliding_moves(_square as usize, legal_only, true, true, BBPiece::Queen as usize);
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
@@ -804,20 +811,20 @@ impl Board {
                     if self.move_color == Color::White as i8 {
                         if self.castling_rights[0] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::F1 as usize) && !util::bb_get(combined_bb, Squares::G1 as usize) {
                             // King-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::G1 as u8, MoveFlag::KingCastle as u8), legal_only);
+                            self.add_move(&Move::from_parts(_square as u8, Squares::G1 as u8, MoveFlag::KingCastle as u8), legal_only, BBPiece::King as usize);
                         }
                         if self.castling_rights[1] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::D1 as usize) && !util::bb_get(combined_bb, Squares::C1 as usize) && !util::bb_get(combined_bb, Squares::B1 as usize) {
                             // Queen-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::C1 as u8, MoveFlag::QueenCastle as u8), legal_only);
+                            self.add_move(&Move::from_parts(_square as u8, Squares::C1 as u8, MoveFlag::QueenCastle as u8), legal_only, BBPiece::King as usize);
                         }
                     } else {
                         if self.castling_rights[2] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::F8 as usize) && !util::bb_get(combined_bb, Squares::G8 as usize) {
                             // King-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::G8 as u8, MoveFlag::KingCastle as u8), legal_only);
+                            self.add_move(&Move::from_parts(_square as u8, Squares::G8 as u8, MoveFlag::KingCastle as u8), legal_only, BBPiece::King as usize);
                         }
                         if self.castling_rights[3] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::D8 as usize) && !util::bb_get(combined_bb, Squares::C8 as usize) && !util::bb_get(combined_bb, Squares::B8 as usize) {
                             // Queen-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::C8 as u8, MoveFlag::QueenCastle as u8), legal_only);
+                            self.add_move(&Move::from_parts(_square as u8, Squares::C8 as u8, MoveFlag::QueenCastle as u8), legal_only, BBPiece::King as usize);
                         }
                     }
                     while _square != 64 {
@@ -833,7 +840,7 @@ impl Board {
                                         _square as u8,
                                         move_square as u8,
                                         flags,
-                                    ), legal_only);
+                                    ), legal_only, BBPiece::King as usize);
                                     move_square = util::bb_gs_low_bit(&mut attacks);
                                 }
                         _square = util::bb_gs_low_bit(&mut pc_bb);
@@ -847,7 +854,7 @@ impl Board {
             self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
         }
     }
-    fn gen_sliding_moves(&mut self, idx: usize, legal_only: bool, orth: bool, diag: bool ) {
+    fn gen_sliding_moves(&mut self, idx: usize, legal_only: bool, orth: bool, diag: bool, piece: usize) {
         let color_bb: BBPiece = if self.move_color == Color::White as i8 {
             BBPiece::White
         } else {
@@ -864,11 +871,11 @@ impl Board {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                         // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only, piece);
                     }
                     break; // Stop sliding in this direction
                 } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only, piece);
                 }
             }
             // Right moves
@@ -878,11 +885,11 @@ impl Board {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                         // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only, piece);
                     }
                     break; // Stop sliding in this direction
                 } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only, piece);
                 }
             }
             // Down moves
@@ -892,11 +899,11 @@ impl Board {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                         // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only, piece);
                     }
                     break; // Stop sliding in this direction
                 } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only, piece);
                 }
             }
             // Up moves
@@ -906,11 +913,11 @@ impl Board {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                         // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
                     }
                     break; // Stop sliding in this direction
                 } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
                 }
             }
         }
@@ -923,11 +930,11 @@ impl Board {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                         // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
                     }
                     break; // Stop sliding in this direction
                 } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
                 }
             }
             // Up-Left moves
@@ -939,11 +946,11 @@ impl Board {
                     // Blocked by a piece
                     if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                         // Capture opponent piece
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
                     }
                     break; // Stop sliding in this direction
                 } else {
-                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                    self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
                 }
             }
             if rank > 0 {
@@ -956,11 +963,11 @@ impl Board {
                         // Blocked by a piece
                         if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                             // Capture opponent piece
-                            self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                            self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
                         }
                         break; // Stop sliding in this direction
                     } else {
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
                     }
                 }
                 // Down-Left moves
@@ -971,11 +978,11 @@ impl Board {
                         // Blocked by a piece
                         if util::bb_get(self.bitboards[1-(color_bb as usize)], target_idx) {
                             // Capture opponent piece
-                            self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only);
+                            self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Capture as u8), legal_only,piece);
                         }
                         break; // Stop sliding in this direction
                     } else {
-                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only);
+                        self.add_move(&Move::from_parts(idx as u8, target_idx as u8, MoveFlag::Quiet as u8), legal_only,piece);
                     }
                 }
             }

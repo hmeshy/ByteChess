@@ -71,12 +71,12 @@ fn main() {
     let stdin = io::stdin();
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    let mut my_time: u64 = 1000 * 160;      // Bot's remaining time in ms
+    let mut my_time: u64 = 1000 * 1600;      // Bot's remaining time in ms
     let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
-    let mut board_hist: Vec<String> = Vec::new();
-    board_hist.push(input_fen.clone());
+    //let mut board_hist: Vec<String> = Vec::new();
+    //board_hist.push(input_fen.clone());
     println!("id name ByteChess");
     println!("id author H&LM");
     println!("uciok");
@@ -130,9 +130,9 @@ fn main() {
             }
             "go" => {           
                 // Parse time controls from the command
-                if input_fen != "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
-                    board_hist.push(input_fen.clone());
-                }
+                //if input_fen != "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
+                //    board_hist.push(input_fen.clone());
+                //}
                 let mut i = 1;
                 while i < tokens.len() {
                     match tokens[i] {
@@ -176,7 +176,7 @@ fn main() {
                 let start = std::time::Instant::now();
                 let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
                 // ... your move selection logic here ...
-                let m = think(&mut board, &board_hist, think_time, start);
+                let m = think(&mut board, think_time, start);
 
                 // After move selection, update the bot's time
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -184,7 +184,7 @@ fn main() {
 
                 // Play the first legal move (pl with legality check)
                 println!("bestmove {}", m);
-                board_hist.push(format!("{}", board));
+                //board_hist.push(format!("{}", board));
             }
             "quit" | "exit" => {
                 break;
@@ -194,7 +194,7 @@ fn main() {
         io::stdout().flush().unwrap();
     }
 }
-fn think(board: &mut board::Board, board_hist: &Vec<String>,think_time: u64, timer: std::time::Instant) -> util::Move {
+fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -> util::Move {
     // Placeholder for thinking logic
     // This function should implement the logic to find the best move
     // based on the current board state and the given time limit.
@@ -214,7 +214,7 @@ fn think(board: &mut board::Board, board_hist: &Vec<String>,think_time: u64, tim
         for m in moves.iter()
         {
             board::make_move(board,&m);
-            let eval = -minimax(board, board_hist, depth, 0, i32::MIN + 1, -alpha, think_time, timer);
+            let eval = -minimax(board, depth, 0, i32::MIN + 1, -alpha, think_time, timer);
             if timer.elapsed().as_millis() > think_time as u128 {
                 // Time is up, break the loop
                 alpha = prev_eval; // Return the previous evaluation if time is up
@@ -234,32 +234,21 @@ fn think(board: &mut board::Board, board_hist: &Vec<String>,think_time: u64, tim
     }
     best_move
 }
-fn minimax(board: &mut board::Board, board_hist: &Vec<String>, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant) -> i32 {
+fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant) -> i32 {
     if depth == 0 {
-        if util::perft(board, 1, true) == 0 {
-            let eval = util::evaluate(board);
-            if eval >= beta {
-                return beta;
-            } else if eval <= alpha {
-                return alpha;
-            } else {
-                return eval;
-            }
-        } else {
-            return minimax_captures(board, depth_searched, alpha, beta, true);
+            return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
         }
-    }
     let mut moves = board.get_ordered_moves(false,false,false);
-    if util::is_repetition(board, board_hist) {
-        return 0; // Draw by repetition
-    }
+    //if util::is_repetition(board, board_hist) {
+    //    return 0; // Draw by repetition
+    //}
     let mut has_moves = false;
     for m in moves.iter(){
         board::make_move(board, &m);
         if !board.king_is_attacked()
         {
             has_moves = true;
-            let eval = -minimax(board, board_hist, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
+            let eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer);
             if eval >= beta {
                 board::undo_move(board);
                 return beta; // Beta cut-off
@@ -283,29 +272,30 @@ fn minimax(board: &mut board::Board, board_hist: &Vec<String>, depth: i32, depth
     }
     alpha
 }
-fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, first_call: bool) -> i32 {
+fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32) -> i32 {
+    board.gen_moves(false,false);
     let eval = util::evaluate(board);
     if eval >= beta {
         return beta;
     } else if eval >= alpha {
         alpha = eval;
     }
-    let mut moves = board.get_ordered_moves(true,false,true);
-    if !first_call
+    board.captures_only();
+    let mut moves = board.moves;
+    if depth_searched <= 2 * depth && moves.len() != 0
     {
-        moves = board.get_ordered_moves(false,false,true); //no need for legal move checking in this deep & controlled search
-    }
-    for m in moves.iter(){
-        board::make_move(board, &m);
-        let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, false);
-        if eval >= beta {
+        for m in moves.iter(){
+            board::make_move(board, &m);
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth);
+            if eval >= beta {
+                board::undo_move(board);
+                return beta; // Beta cut-off
+            }
+            if eval > alpha {
+                alpha = eval; // Update alpha
+            }
             board::undo_move(board);
-            return beta; // Beta cut-off
         }
-        if eval > alpha {
-            alpha = eval; // Update alpha
-        }
-        board::undo_move(board);
     }
     alpha
 }
