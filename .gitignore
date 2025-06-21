@@ -3,3 +3,5 @@ src/byte.pdb
 target
 *.txt
 flamegraph.svg
+flamegraph.svg
+*.svg

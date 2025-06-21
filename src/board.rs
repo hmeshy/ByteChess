@@ -9,6 +9,7 @@ use crate::util::{Color,Move,MoveFlag,Squares};
 use self::strum_macros::EnumIter;
 use self::strum::IntoEnumIterator;
 use crate::{board, PIECE_VALUES};
+use crate::zobrist::{ZOBRIST_CASTLING,ZOBRIST_EP,ZOBRIST_PIECES,ZOBRIST_SIDE};
 
 pub const KNIGHT_ATTACKS: [u64; 64] =[0x0000000000020400, 0x0000000000050800, 0x00000000000a1100, 0x0000000000142200, 0x0000000000284400, 0x0000000000508800, 0x0000000000a01000, 0x0000000000402000,
 0x0000000002040004, 0x0000000005080008, 0x000000000a110011, 0x0000000014220022, 0x0000000028440044, 0x0000000050880088, 0x00000000a0100010, 0x0000000040200020,
@@ -66,6 +67,7 @@ pub struct Board {
     pub en_passant: Option<usize>,
     pub halfmove_clock: u8,
     pub fullmove_number: u16,
+    pub zobrist_hash: u64,
     pub moves: util::MoveStack,
     pub piece_moves: [u32; 8],
     pub state_history: Vec<([bool; 4], Option<usize>, u8)>,
@@ -73,6 +75,7 @@ pub struct Board {
     pub move_history: Vec<Move>,
     // Captures history: stack of (from_piece, to_piece) for each capture
     pub captures_history: Vec<(BBPiece, BBPiece)>,
+    pub position_history: Vec<u64>,
 }
 
 impl Board {
@@ -140,6 +143,31 @@ pub fn is_check(board: &mut Board) -> bool {
         board.move_color = -board.move_color; // Reverse the move color back!!
         ret
     }
+// Helper: get piece index for Zobrist table
+fn zobrist_piece_index(piece: BBPiece, color: BBPiece) -> usize {
+    let piece_idx = match piece {
+        BBPiece::Pawn => 0,
+        BBPiece::Knight => 1,
+        BBPiece::Bishop => 2,
+        BBPiece::Rook => 3,
+        BBPiece::Queen => 4,
+        BBPiece::King => 5,
+        _ => panic!("Invalid piece for zobrist"),
+    };
+    let color_idx = match color {
+        BBPiece::White => 0,
+        BBPiece::Black => 1,
+        _ => panic!("Invalid color for zobrist"),
+    };
+    piece_idx + 6 * color_idx
+}
+/// Converts [White King, White Queen, Black King, Black Queen] castling rights to a usize (0..16)
+pub fn castling_rights_to_bits(castling_rights: &[bool; 4]) -> usize {
+    (castling_rights[0] as usize) << 0 |
+    (castling_rights[1] as usize) << 1 |
+    (castling_rights[2] as usize) << 2 |
+    (castling_rights[3] as usize) << 3
+}
 // make move function (as UCI) - given a from and to square, move the piece to the new square, and empty the previous square (accepts square name inputs)
 // assumes that a move is legal, tracks other FEN changes
 pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
@@ -153,6 +181,8 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     )); //update state history
     // Check if castling eligibility has changed
     // Check which piece has moved
+    board.position_history.push(board.zobrist_hash);
+    board.zobrist_hash ^= ZOBRIST_CASTLING[castling_rights_to_bits(&board.castling_rights)];
     if board.get([BBPiece::King], from_index) {
         // King moved, update castling rights
         board.castling_rights[(1-board.move_color) as usize] = false; // First castling rights for color
@@ -185,7 +215,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
             board.castling_rights[2] = false; // Black King-side
         }
     }
-
+    board.zobrist_hash ^= ZOBRIST_CASTLING[castling_rights_to_bits(&board.castling_rights)];
     let mut captured: Option<(BBPiece, BBPiece)> = None;
 
     // Handle capture and move the piece
@@ -196,6 +226,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
                 if board.get([piece], to_index) {
                     captured = Some((color, piece));
                     board.set([piece], to_index, false); // Remove captured piece
+                    board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(piece, color)][to_index as usize];
                     break;
                 }
             }
@@ -205,35 +236,62 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     }
 
     // Move the piece from from_index to to_index on its respective bitboard
+    let mut _piece = BBPiece::Pawn;
     for piece in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
         if board.get([piece], from_index) {
             board.set([piece], from_index, false);
             board.set([piece], to_index, true);
+            _piece = piece;
             break;
         }
     }
     // Move the color bit as well
+    let mut _color = BBPiece::White;
+    let mut opp_color = BBPiece::White;
     for color in [BBPiece::White, BBPiece::Black] {
         if board.get([color], from_index) {
             board.set([color], from_index, false);
             board.set([color], to_index, true);
+            _color = color;
             break;
         }
     }
+    if _color == BBPiece::White {
+        opp_color = BBPiece::Black;
+    }
+    board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(_piece, _color)][from_index as usize];
+    board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(_piece, _color)][to_index as usize];
 
     if let Some(capture) = captured {
         board.captures_history.push(capture);
     }
     if flags & 0x8 != 0 { // Pawn Promotion
-        match flags & 0x3 { // Get Promotion Piece
-            0 => board.set([BBPiece::Knight], to_index, true),
-            1 => board.set([BBPiece::Bishop], to_index, true),
-            2 => board.set([BBPiece::Rook], to_index, true),
-            3 => board.set([BBPiece::Queen], to_index, true),
-            _ => return Err("Invalid promotion type".to_string()),
-        }
-        board.set([BBPiece::Pawn], to_index, false); // Remove the pawn from the board
+    // Remove pawn from hash
+    board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Pawn, _color)][to_index as usize];
+    // Remove pawn from board
+    board.set([BBPiece::Pawn], to_index, false);
+
+    // Add promoted piece to board and hash
+    match flags & 0x3 { // Get Promotion Piece
+        0 => {
+            board.set([BBPiece::Knight], to_index, true);
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Knight, _color)][to_index as usize];
+        },
+        1 => {
+            board.set([BBPiece::Bishop], to_index, true);
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Bishop, _color)][to_index as usize];
+        },
+        2 => {
+            board.set([BBPiece::Rook], to_index, true);
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, _color)][to_index as usize];
+        },
+        3 => {
+            board.set([BBPiece::Queen], to_index, true);
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Queen, _color)][to_index as usize];
+        },
+        _ => return Err("Invalid promotion type".to_string()),
     }
+}
     if flags == MoveFlag::EnPassant as u8 { // En passant
         // Clear the captured pawn
         let captured_pawn_index = if board.move_color == Color::White as i8 {
@@ -244,30 +302,47 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
             to_index.wrapping_add(8)
         };        
         board.set([BBPiece::Pawn, BBPiece::White, BBPiece::Black], captured_pawn_index, false); // Clear the captured pawn
+        board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Pawn, opp_color)][captured_pawn_index as usize];
     }
     if flags & 0x2 != 0 && flags & 0xC == 0 { // Castling
         if from_index == Squares::E1 as u8 && to_index == Squares::G1 as u8 { // White King-side castle
             board.move_piece([BBPiece::Rook, BBPiece::White], Squares::H1, Squares::F1); 
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::White)][Squares::H1 as usize];
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::White)][Squares::F1 as usize];
         } else if from_index == Squares::E1 as u8 && to_index == Squares::C1 as u8 { // White Queen-side castle
             board.move_piece([BBPiece::Rook, BBPiece::White], Squares::A1, Squares::D1);
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::White)][Squares::A1 as usize];
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::White)][Squares::D1 as usize];
         } else if from_index == Squares::E8 as u8 && to_index == Squares::G8 as u8 { // Black King-side castle
             board.move_piece([BBPiece::Rook, BBPiece::Black], Squares::H8, Squares::F8); 
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::Black)][Squares::H8 as usize];
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::Black)][Squares::F8 as usize];
         } else if from_index == Squares::E8 as u8 && to_index == Squares::C8 as u8 { // Black Queen-side castle
             board.move_piece([BBPiece::Rook, BBPiece::Black], Squares::A8, Squares::D8); 
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::Black)][Squares::A8 as usize];
+            board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, BBPiece::Black)][Squares::D8 as usize];
         }
     }
 
     // Update other board state information
     board.move_color *= -1;
+    board.zobrist_hash ^= ZOBRIST_SIDE;
     if board.move_color == Color::White as i8 {
         board.fullmove_number += 1;
     }
     
+    if let Some(old_ep) = board.en_passant {
+        board.zobrist_hash ^= ZOBRIST_EP[old_ep % 8];
+    }
     // Check En Passant square
     if flags == MoveFlag::DoublePush as u8 {
         //TODO: Check if en passant is legal in the next move, first
-        board.en_passant = Some((from_index as i8 - 8 * board.move_color) as usize); // Set en passant target square
-    } else {
+        let ep_square = (from_index as i8 - 8 * board.move_color) as usize;
+        board.en_passant = Some(ep_square);
+        // Add new en passant to hash
+        board.zobrist_hash ^= ZOBRIST_EP[ep_square % 8];    
+    } 
+    else {
         board.en_passant = None; // Clear en passant target square
     }
 
@@ -290,7 +365,10 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
     let from_index = _move.from_square();
     let to_index = _move.to_square();
     let flags = _move.flags();
-
+    board.zobrist_hash = match board.position_history.pop() {
+        Some(hash) => hash,
+        None => return Err("No position history to undo".to_string()),
+    };
     // Undo move_color and fullmove_number
     if board.move_color == Color::White as i8 {
         // If it's white's turn now, it was black's turn before
@@ -298,7 +376,6 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
     }
     board.move_color *= -1;
     //now, board.move_color is the color of the player who moved the original piece!
-
     // Undo en passant, castling rights, and halfmove clock from state_history
     if let Some((castling_rights, en_passant, halfmove_clock)) = board.state_history.pop() {
         board.castling_rights = castling_rights;
@@ -307,15 +384,22 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
     } else {
         return Err("No state history to undo".to_string());
     }
-
     // Undo pawn promotion
     if flags & 0x8 != 0 {
         // Remove promoted piece
         match flags & 0x3 {
-            0 => board.set([BBPiece::Knight], to_index, false),
-            1 => board.set([BBPiece::Bishop], to_index, false),
-            2 => board.set([BBPiece::Rook], to_index, false),
-            3 => board.set([BBPiece::Queen], to_index, false),
+            0 => {
+                board.set([BBPiece::Knight], to_index, false);
+            },
+            1 => {
+                board.set([BBPiece::Bishop], to_index, false);
+            },
+            2 => {
+                board.set([BBPiece::Rook], to_index, false);
+            }
+            3 => {
+                board.set([BBPiece::Queen], to_index, false);
+            }
             _ => return Err("Invalid promotion type".to_string()),
         }
         // Restore pawn
@@ -999,6 +1083,21 @@ impl Board {
         if KING_ATTACKS[square] & self.bitboards[color_bb as usize] & self.bitboards[BBPiece::King as usize] != 0
         {
             return true
+        }
+        false
+    }
+    pub fn is_draw(&self) -> bool {
+        // 50-move rule
+        if self.halfmove_clock >= 100 {
+            return true;
+        }
+
+        // Threefold repetition: count occurrences of current Zobrist hash in position history
+        let current_hash = self.zobrist_hash;
+        for &hash in self.position_history.iter().rev() {
+            if hash == current_hash {
+                return true;
+            }
         }
         false
     }

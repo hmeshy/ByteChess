@@ -1,4 +1,4 @@
-//from & thanks to https://github.com/codedeliveryservice/RecklessMagics/tree/main
+//magics from & thanks to https://github.com/codedeliveryservice/RecklessMagics/tree/main
 #[rustfmt::skip]
 pub struct MagicEntry { pub mask: u64, pub magic: u64, pub shift: u32, pub offset: usize }
 

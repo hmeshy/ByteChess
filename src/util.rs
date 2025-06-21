@@ -65,17 +65,6 @@ impl MoveStack {
             }
         }
     }
-    /// Clears the stack and returns a Vec of all moves that were present.
-    pub fn take_all(&mut self) -> Vec<Move> {
-        let mut moves = Vec::with_capacity(self.len);
-        for i in 0..self.len {
-            if let Some(mv) = self.data[i].take() {
-                moves.push(mv);
-            }
-        }
-        self.len = 0;
-        moves
-    }
     pub fn first(&self) -> Move {
         self.data[0].unwrap_or_else(|| Move { info: 0 })
     }
@@ -396,11 +385,13 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         en_passant,
         halfmove_clock,
         fullmove_number,
+        zobrist_hash: 0u64, //generated AFTER making a board
         moves: MoveStack::new(),
         piece_moves,
         state_history: Vec::new(),
         move_history: Vec::new(),
         captures_history: Vec::new(),
+        position_history: Vec::new(),
     }
 }
 // Print function for Board
@@ -513,27 +504,6 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
     *bb &= !(1 << low_bit);
     low_bit
 }
-
-#[inline]
-pub(crate) fn bb_print(bb: u64) -> () {
-    let mut result = String::new();
-    for rank in (0..8).rev() {
-        for file in 0..8 {
-            let i = rank * 8 + file;
-            if bb_get(bb, i) {
-                result.push('1');
-            } else {
-                result.push('0');
-            }
-            if file != 7 {
-                result.push(' ');
-            }
-        }
-        result.push('\n');
-    }
-    print!("{}", result);
-}
-
 pub fn evaluate(board: &board::Board) -> i32 {
     let mut score = 0;
     // Use the original board for the current move color
@@ -577,26 +547,6 @@ pub fn evaluate(board: &board::Board) -> i32 {
     }
     score * board.move_color as i32 // Adjust score based on the current player's color
 }
-pub fn is_repetition(board: &Board, fen_list: &[String]) -> bool {
-    let board_fen = format!("{}", board);
-    let board_parts: Vec<&str> = board_fen.split_whitespace().collect();
-    if board_parts.len() < 2 {
-        return false;
-    }
-    let board_key = format!("{} {}", board_parts[0], board_parts[1]);
-    for fen in fen_list {
-        let fen_parts: Vec<&str> = fen.split_whitespace().collect();
-        if fen_parts.len() < 2 {
-            continue;
-        }
-        let fen_key = format!("{} {}", fen_parts[0], fen_parts[1]);
-        if board_key == fen_key {
-            return true;
-        }
-    }
-    false
-}
-
 pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
     let mut count = 0;
     bd.gen_moves(true,captures_only);
@@ -614,56 +564,6 @@ pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
             count += 1;
         }
         board::undo_move(bd);
-        /*if orig != *bd { // debug code
-            eprintln!("Board changed after make/undo!\nOriginal:\n{}\nMove: {}\nAfter undo:\n{}", orig, m, bd);
-
-            // Compare fields and print differences
-            if orig.bitboards != bd.bitboards {
-            eprintln!("bitboards differ:\n  orig: {:?}\n  bd:   {:?}", orig.bitboards, bd.bitboards);
-            }
-            if orig.move_color != bd.move_color {
-            eprintln!("move_color differ:\n  orig: {:?}\n  bd:   {:?}", orig.move_color, bd.move_color);
-            }
-            if orig.castling_rights != bd.castling_rights {
-            eprintln!("castling_rights differ:\n  orig: {:?}\n  bd:   {:?}", orig.castling_rights, bd.castling_rights);
-            }
-            if orig.en_passant != bd.en_passant {
-            eprintln!("en_passant differ:\n  orig: {:?}\n  bd:   {:?}", orig.en_passant, bd.en_passant);
-            }
-            if orig.halfmove_clock != bd.halfmove_clock {
-            eprintln!("halfmove_clock differ:\n  orig: {:?}\n  bd:   {:?}", orig.halfmove_clock, bd.halfmove_clock);
-            }
-            if orig.fullmove_number != bd.fullmove_number {
-            eprintln!("fullmove_number differ:\n  orig: {:?}\n  bd:   {:?}", orig.fullmove_number, bd.fullmove_number);
-            }
-            if orig.state_history != bd.state_history {
-            eprintln!("state_history differ:\n  orig: {:?}\n  bd:   {:?}", orig.state_history, bd.state_history);
-            }
-            if orig.move_history != bd.move_history {
-            eprintln!("move_history differ:\n  orig: {:?}\n  bd:   {:?}", orig.move_history, bd.move_history);
-            }
-            if orig.captures_history != bd.captures_history {
-            eprintln!("captures_history differ:\n  orig: {:?}\n  bd:   {:?}", orig.captures_history, bd.captures_history);
-            }
-
-            panic!("Board state mismatch after make/undo");
-        }*/
     }
     count
 }
-/*pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 { //old with copying
-    let mut count = 0;
-    for m in bd.gen_moves(captures_only) {
-        let mut bd_copy = bd.clone();
-        board::make_move(&mut bd_copy,&m);
-        if !bd_copy.king_is_attacked(){
-            //println!("{}",m);
-            if depth > 1 {
-                count += perft(&mut bd_copy,depth - 1, captures_only);
-            } else {
-                count += 1;
-            }    
-        }
-    }
-    count
-}*/
