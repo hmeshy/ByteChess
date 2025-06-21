@@ -10,154 +10,6 @@ mod util;
 mod magic;
 pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
-/*fn set_occupancy(index: u32, bits_in_mask: u32, mask: u64) -> u64 {
-    let mut occupancy = 0u64;
-    let mut mask = mask;
-    let mut idx = index;
-    for _ in 0..bits_in_mask {
-        let bit = mask & mask.wrapping_neg();
-        mask &= mask - 1;
-        if idx & 1 != 0 {
-            occupancy |= bit;
-        }
-        idx >>= 1;
-    }
-    occupancy
-}
-
-fn generate_big_attack_table(magics: &[magic::MagicEntry], is_rook: bool) -> Vec<u64> {
-    // Compute total size
-    let total_size = magics.iter()
-        .map(|entry| 1 << entry.mask.count_ones())
-        .sum::<usize>();
-    let mut big_table = vec![0u64; total_size];
-
-    for (square, entry) in magics.iter().enumerate() {
-        let bits_in_mask = entry.mask.count_ones();
-        let table_size = 1 << bits_in_mask;
-        for index in 0..table_size {
-            let blockers = set_occupancy(index, bits_in_mask, entry.mask);
-            let attack = if is_rook {
-                rook_attacks_on_the_fly(square, blockers)
-            } else {
-                bishop_attacks_on_the_fly(square, blockers)
-            };
-            let magic_index = ((blockers.wrapping_mul(entry.magic)) >> entry.shift) as usize;
-            big_table[entry.offset + magic_index] = attack;
-        }
-    }
-    big_table
-}
-/// Generates rook attacks for a given square and blocker set.
-fn rook_attacks_on_the_fly(square: usize, blockers: u64) -> u64 {
-    let mut attacks = 0u64;
-    let rank = square / 8;
-    let file = square % 8;
-
-    // Up
-    for r in rank + 1..8 {
-        let sq = r * 8 + file;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-    }
-    // Down
-    for r in (0..rank).rev() {
-        let sq = r * 8 + file;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-    }
-    // Right
-    for f in file + 1..8 {
-        let sq = rank * 8 + f;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-    }
-    // Left
-    for f in (0..file).rev() {
-        let sq = rank * 8 + f;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-    }
-    attacks
-}
-
-/// Generates bishop attacks for a given square and blocker set.
-fn bishop_attacks_on_the_fly(square: usize, blockers: u64) -> u64 {
-    let mut attacks = 0u64;
-    let rank = square / 8;
-    let file = square % 8;
-
-    // Up-right
-    let mut r = rank + 1;
-    let mut f = file + 1;
-    while r < 8 && f < 8 {
-        let sq = r * 8 + f;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-        r += 1;
-        f += 1;
-    }
-    // Up-left
-    let mut r = rank + 1;
-    let mut f = file.wrapping_sub(1);
-    while r < 8 && f < 8 {
-        let sq = r * 8 + f;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-        r += 1;
-        if f == 0 { break; }
-        f -= 1;
-    }
-    // Down-right
-    let mut r = rank.wrapping_sub(1);
-    let mut f = file + 1;
-    while r < 8 && f < 8 {
-        let sq = r * 8 + f;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-        if r == 0 { break; }
-        r -= 1;
-        f += 1;
-    }
-    // Down-left
-    let mut r = rank.wrapping_sub(1);
-    let mut f = file.wrapping_sub(1);
-    while r < 8 && f < 8 {
-        let sq = r * 8 + f;
-        attacks |= 1u64 << sq;
-        if blockers & (1u64 << sq) != 0 { break; }
-        if r == 0 || f == 0 { break; }
-        r -= 1;
-        f -= 1;
-    }
-    attacks
-}
-
-/// Generates and prints the big rook attack table using your magics.
-fn generate_rook_attack_table() {
-    // You must provide your magics somewhere accessible, e.g.:
-    // let magics: Vec<magic::MagicEntry> = ...;
-    // For demonstration, this is a placeholder:
-    let magics = magic::BISHOP_MAGICS; // Fill with your actual data!
-    let big_table = generate_big_attack_table(&magics, false);
-
-    let file = File::create("bishop_attack_table.txt").expect("Unable to create file");
-    let mut writer = BufWriter::new(file);
-
-    for (i, att) in big_table.iter().enumerate() {
-        writeln!(writer, "{:#018x},", att).expect("Unable to write data");
-        // Optional: add a blank line every 4 entries for readability
-        if (i + 1) % 4 == 0 {
-            writeln!(writer).ok();
-        }
-    }
-    println!("Rook attack table written to bishop_attack_table.txt");
-}
-
-fn main() {
-    generate_rook_attack_table();
-}*/
-
 /*fn main()
 {
     for sq in 0..64 {
@@ -179,7 +31,7 @@ fn main() {
         if sq % 8 == 7 { println!(); }
     }
 }*/
-fn main() // perft profiling debugging as necessary
+/*fn main() // perft profiling debugging as necessary
 {
     unsafe {
         env::set_var("RUST_BACKTRACE", "1");
@@ -217,9 +69,9 @@ fn main() // perft profiling debugging as necessary
     println!("{}", util::perft(&mut board, 7, false));
     let duration = start.elapsed();
     println!("perft took {} ms", duration.as_millis());
-}
+}*/
 
-/*fn main() {
+fn main() {
     use std::io::{self, Write, BufRead};
     let stdin = io::stdin();
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -346,7 +198,7 @@ fn main() // perft profiling debugging as necessary
         }
         io::stdout().flush().unwrap();
     }
-}*/
+}
 fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant) -> util::Move {
     // Placeholder for thinking logic
     // This function should implement the logic to find the best move
