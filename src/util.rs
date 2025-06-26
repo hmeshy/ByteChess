@@ -511,7 +511,7 @@ pub fn evaluate(board: &board::Board) -> i32 {
         // White to move: use board for white, clone for black
         let mut b_board = board.clone();
         b_board.move_color = -1;
-        b_board.gen_moves(false, false);
+        b_board.gen_moves(false, false); //todo - make legal_only bc for some reason it crashes when i try?
         let w_attacks = board.piece_moves;
         let b_attacks = b_board.piece_moves;
         (w_attacks, b_attacks)

@@ -228,6 +228,9 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     best_move
 }
 fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable) -> i32 {
+    if board.is_draw() {
+        return 0; // Draw by repetition or 50 move; checked before hash to avoid draws on decreasing depth!
+    }
     // TT probe
     if let Some(entry) = tt.probe(board.zobrist_hash) {
         if entry.depth >= depth {
@@ -240,9 +243,6 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     }
     if depth == 0 {
             return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
-    }
-    if board.is_draw() {
-        return 0; // Draw by repetition
     }
     let mut moves = board.get_ordered_moves(false,false,false);
     let mut has_moves = false;
