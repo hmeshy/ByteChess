@@ -169,6 +169,7 @@ fn main() {
                 let start = std::time::Instant::now();
                 let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
                 // ... your move selection logic here ...
+                tt = TranspositionTable::new();
                 let m = think(&mut board, think_time, start, &mut tt);
 
                 // After move selection, update the bot's time
@@ -197,6 +198,25 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     let mut best_move = moves.first().clone(); // Return the first legal move as a placeholder
     let mut previous_best_move = best_move.clone();
     let mut prev_eval = alpha;
+    if let Some(entry) = tt.probe(board.zobrist_hash) {
+        let best_move_uci = entry.best_move
+            .map(|m| format!("{}", m))
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "TT: zobrist={:016x} depth={} score={} bound={:?} best_move={} age={}",
+            entry.zobrist,
+            entry.depth,
+            entry.score,
+            entry.bound,
+            best_move_uci,
+            entry.age
+        );
+    } else {
+        println!(
+            "TT: zobrist={:016x} not found",
+            board.zobrist_hash
+        );
+    }
     while timer.elapsed().as_millis() < think_time as u128 {
         // remove and insert previous best move at the beginning of moves
         let pos = moves.iter().position(|m| *m == previous_best_move);

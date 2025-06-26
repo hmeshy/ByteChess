@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::util::Move;
 
 // The type of bound stored in the table
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Bound {
     Exact,      // PV-Node: exact score
     Lower,      // Cut-Node: lower bound (beta cutoff)
