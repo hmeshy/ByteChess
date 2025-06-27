@@ -169,7 +169,6 @@ fn main() {
                 let start = std::time::Instant::now();
                 let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
                 // ... your move selection logic here ...
-                tt = TranspositionTable::new();
                 let m = think(&mut board, think_time, start, &mut tt);
 
                 // After move selection, update the bot's time
@@ -178,7 +177,6 @@ fn main() {
 
                 // Play the first legal move (pl with legality check)
                 println!("bestmove {}", m);
-                //board_hist.push(format!("{}", board));
             }
             "quit" | "exit" => {
                 break;
@@ -192,6 +190,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     // Placeholder for thinking logic
     // This function should implement the logic to find the best move
     // based on the current board state and the given time limit.
+    tt.next_age();
     let mut depth = 0;
     let mut moves = board.get_ordered_moves(false,true,false);
     let mut alpha = i32::MIN + 1;
@@ -199,23 +198,10 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     let mut previous_best_move = best_move.clone();
     let mut prev_eval = alpha;
     if let Some(entry) = tt.probe(board.zobrist_hash) {
-        let best_move_uci = entry.best_move
-            .map(|m| format!("{}", m))
-            .unwrap_or_else(|| "-".to_string());
-        println!(
-            "TT: zobrist={:016x} depth={} score={} bound={:?} best_move={} age={}",
-            entry.zobrist,
-            entry.depth,
-            entry.score,
-            entry.bound,
-            best_move_uci,
-            entry.age
-        );
-    } else {
-        println!(
-            "TT: zobrist={:016x} not found",
-            board.zobrist_hash
-        );
+        if let Some(mv) = entry.best_move {
+            best_move = mv;
+            previous_best_move = best_move;
+        }
     }
     while timer.elapsed().as_millis() < think_time as u128 {
         // remove and insert previous best move at the beginning of moves
@@ -252,19 +238,27 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         return 0; // Draw by repetition or 50 move; checked before hash to avoid draws on decreasing depth!
     }
     // TT probe
+    let mut tt_best_move = None;
     if let Some(entry) = tt.probe(board.zobrist_hash) {
-        if entry.depth >= depth {
+        if entry.depth >= depth && entry.age == tt.age {
             match entry.bound {
                 Bound::Exact => return entry.score,
                 Bound::Lower => if entry.score > alpha { alpha = entry.score; },
                 Bound::Upper => if entry.score < beta { return entry.score; },
             }
         }
+        tt_best_move = entry.best_move;
     }
     if depth == 0 {
             return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
     }
-    let mut moves = board.get_ordered_moves(false,false,false);
+    let mut moves = board.get_ordered_moves(false, false, false); // <-- no &
+    if let Some(bm) = tt_best_move {
+        let pos = moves.iter().position(|m| *m == bm);
+        if let Some(pos) = pos {
+            moves.move_to_front(pos);
+        }
+    }
     let mut has_moves = false;
     let mut best_score = i32::MIN + 1;
     let mut best_move: Option<util::Move> = None;

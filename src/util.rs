@@ -87,6 +87,15 @@ impl MoveStack {
             Move{info:0}
         }
     }
+    pub fn move_to_front(&mut self, index: usize) {
+        if index >= self.len {
+            return;
+        }
+        // Remove the move at index
+        let mv = self.remove(index);
+        // Insert it at the front
+        let _ = self.insert(0, mv);
+    }
         /// Inserts a move at the given index, shifting elements to the right.
     pub fn insert(&mut self, index: usize, mv: Move) -> Result<(), &'static str> {
         if self.len >= self.data.len() {
