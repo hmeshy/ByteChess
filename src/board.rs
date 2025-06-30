@@ -1138,7 +1138,7 @@ impl Board {
             {
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, false, true);
+                    attacks += self.gen_sliding_mobility(_square as usize, false, true, is_white);
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
@@ -1146,7 +1146,7 @@ impl Board {
             {
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, true, false);
+                    attacks += self.gen_sliding_mobility(_square as usize, true, false, is_white);
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
@@ -1154,7 +1154,7 @@ impl Board {
             {
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, true, true);
+                    attacks += self.gen_sliding_mobility(_square as usize, true, true, is_white);
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
@@ -1172,8 +1172,8 @@ impl Board {
         }
         attacks
     }
-    fn gen_sliding_mobility(&self, idx: usize, orth: bool, diag: bool) -> u32 {
-        let color_bb: BBPiece = if self.move_color == Color::White as i8 {
+    fn gen_sliding_mobility(&self, idx: usize, orth: bool, diag: bool, is_white: bool) -> u32 {
+        let color_bb: BBPiece = if is_white {
             BBPiece::White
         } else {
             BBPiece::Black

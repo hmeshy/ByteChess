@@ -530,14 +530,13 @@ pub fn evaluate(board: &board::Board) -> i32 {
         if (piece == BBPiece::Pawn) {
             while bitboard != 0 {
                 let square = bb_gs_low_bit(&mut bitboard);
-                partial_score += 3 * if is_white { (square / 8 - 1) as i32 } else { (7 - square / 8) as i32 };
+                partial_score += 3 * if is_white { (square / 8 - 1) as i32 } else { (6 - square / 8) as i32 };
             }
         }
         score += if is_white { partial_score } else { -partial_score };
         partial_score = 0; // Reset for next piece
     }
-    score = score * board.move_color as i32; // Adjust score based on the current player's color
-    score + board.moves.len() as i32 // for now mobility is just # of moves we have
+    score * board.move_color as i32 // Adjust score based on the current player's color
 }
 pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
     let mut count = 0;
