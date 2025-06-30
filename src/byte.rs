@@ -310,6 +310,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     });
     alpha
 }
+// to_do -> include checks to make eval a truly quiet position
 fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32) -> i32 {
     board.gen_moves(false,false);
     let eval = util::evaluate(board);

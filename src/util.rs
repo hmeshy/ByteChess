@@ -396,7 +396,6 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         fullmove_number,
         zobrist_hash: 0u64, //generated AFTER making a board
         moves: MoveStack::new(),
-        piece_moves,
         state_history: Vec::new(),
         move_history: Vec::new(),
         captures_history: Vec::new(),
@@ -515,25 +514,8 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
 }
 pub fn evaluate(board: &board::Board) -> i32 {
     let mut score = 0;
-    // Use the original board for the current move color
-    let (w_attacks, b_attacks) = if board.move_color == 1 {
-        // White to move: use board for white, clone for black
-        let mut b_board = board.clone();
-        b_board.move_color = -1;
-        b_board.gen_moves(false, false); //todo - make legal_only bc for some reason it crashes when i try?
-        let w_attacks = board.piece_moves;
-        let b_attacks = b_board.piece_moves;
-        (w_attacks, b_attacks)
-    } else {
-        // Black to move: use board for black, clone for white
-        let mut w_board = board.clone();
-        w_board.move_color = 1;
-        w_board.gen_moves(false, false);
-        let w_attacks = w_board.piece_moves;
-        let b_attacks = board.piece_moves;
-        (w_attacks, b_attacks)
-    };
-    for i in 0..12{
+    let (w_attacks, b_attacks) = board.compute_mobility();
+    for i in 0..12 {
         // for now piece values, next mobility too!
         let piece = BBPiece::from((i%6)+2);
         let colorbb = if i < 6 { BBPiece::White } else { BBPiece::Black };
@@ -554,7 +536,8 @@ pub fn evaluate(board: &board::Board) -> i32 {
         score += if is_white { partial_score } else { -partial_score };
         partial_score = 0; // Reset for next piece
     }
-    score * board.move_color as i32 // Adjust score based on the current player's color
+    score = score * board.move_color as i32; // Adjust score based on the current player's color
+    score + board.moves.len() as i32 // for now mobility is just # of moves we have
 }
 pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
     let mut count = 0;
