@@ -512,7 +512,7 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
     *bb &= !(1 << low_bit);
     low_bit
 }
-pub fn evaluate(board: &board::Board) -> i32 {
+pub fn evaluate(board: &board::Board) -> i32 { //fast_eval stc -> +94.3 +/- 41.8 ltc -> 68.6 +/- 41.0
     let mut score = 0;
     let (w_attacks, b_attacks) = board.compute_mobility();
     for i in 0..12 {
@@ -528,19 +528,55 @@ pub fn evaluate(board: &board::Board) -> i32 {
         let mut partial_score = 0;
         partial_score += piece_value * bitboard.count_ones() as i32 + mobility_value * attack_value as i32;
         if (piece == BBPiece::Pawn) {
-            while bitboard != 0 {
-                let square = bb_gs_low_bit(&mut bitboard);
-                partial_score += 3 * if is_white { (square / 8 - 1) as i32 } else { (6 - square / 8) as i32 };
-            }
+            partial_score += pawn_gain(bitboard, is_white);
         }
         score += if is_white { partial_score } else { -partial_score };
         partial_score = 0; // Reset for next piece
     }
     score * board.move_color as i32 // Adjust score based on the current player's color
 }
-pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
+fn pawn_gain(pawn_bb: u64, is_white: bool) -> i32 {
+    let mut score: i32 = 0;
+    let mut bitboard = pawn_bb;
+    let mut pawns = [0u64; 8];
+    while bitboard != 0 {
+        let square = bb_gs_low_bit(&mut bitboard);
+        let rank = square / 8;
+        let file = square % 8;
+        // Add score based on the rank of the pawn
+        score += 3 * if is_white {
+            2_i32.pow((rank as u32).saturating_sub(1))
+        } else {
+            2_i32.pow((6u32).saturating_sub(rank as u32))
+        };
+        // Adjust pawn structure based on file
+        pawns[file] = pawns[file] + 1;
+    }
+    let mut prev = 7;
+    let mut prev_prev = 7;
+    for i in 0..8 {
+        if pawns[i] > 0 {
+            if prev == 0 || prev > 6 { // If new pawn island
+                score -= 2; // pawn island penalty
+            }
+            if pawns[i] > 1 { // If doubled pawns
+                score -= (pawns[i] * pawns[i]) as i32; // doubled pawn penalty
+            }
+            prev_prev = prev;
+            prev = pawns[i];
+        } else {
+            if prev > 0 && prev_prev == 0 { // If isolated (not wing!) pawn
+                score -= (5 * prev * prev) as i32; // isolated pawn penalty
+            }
+            prev_prev = prev;
+            prev = 0;
+        }
+    }
+    score
+}
+pub fn perft(bd: &mut board::Board, depth: u8) -> u64 {
     let mut count = 0;
-    bd.gen_moves(true,captures_only);
+    bd.gen_moves(true);
     let moves = bd.moves;
     if depth <= 1
     {
@@ -550,7 +586,7 @@ pub fn perft(bd: &mut board::Board, depth: u8, captures_only: bool) -> u64 {
         let orig = bd.clone();
         board::make_move(bd, m);
         if depth > 1 {
-            count += perft(bd, depth - 1, captures_only);
+            count += perft(bd, depth - 1);
         } else {
             count += 1;
         }

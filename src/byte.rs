@@ -112,7 +112,7 @@ fn main() {
                 // Play moves if present
                 if let Some(moves_idx) = tokens.iter().position(|&s| s == "moves") {
                     for mv in &tokens[moves_idx + 1..] {
-                        board.gen_moves(false,false); //we can trust the move to compare against to be legal!
+                        board.gen_moves(false); //we can trust the move to compare against to be legal!
                         let legal_moves = board.moves;
                         let found = legal_moves.iter().find(|m| format!("{}", m) == *mv);
                         if let Some(m) = found {
@@ -192,7 +192,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     // based on the current board state and the given time limit.
     tt.next_age();
     let mut depth = 0;
-    let mut moves = board.get_ordered_moves(false,true,false);
+    let mut moves = board.get_ordered_moves(false,true);
     let mut alpha = i32::MIN + 1;
     let mut best_move = moves.first().clone(); // Return the first legal move as a placeholder
     let mut previous_best_move = best_move.clone();
@@ -252,7 +252,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     if depth == 0 {
             return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
     }
-    let mut moves = board.get_ordered_moves(false, false, false); // <-- no &
+    let mut moves = board.get_ordered_moves(false, false); // <-- no &
     if let Some(bm) = tt_best_move {
         let pos = moves.iter().position(|m| *m == bm);
         if let Some(pos) = pos {
@@ -312,7 +312,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
 }
 // to_do -> include checks to make eval a truly quiet position
 fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32) -> i32 {
-    board.gen_moves(false,false);
+    board.gen_moves(false);
     let eval = util::evaluate(board);
     if eval >= beta {
         return beta;

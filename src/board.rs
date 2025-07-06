@@ -495,9 +495,9 @@ fn bishop_attacks(square: usize, occupancy: u64) -> u64
     magic::BISHOP_ATTACKS[index]
 }
 impl Board {
-    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool) -> util::MoveStack {
+    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool) -> util::MoveStack {
         if !is_generated{
-        self.gen_moves(legal_only, captures_only);}
+        self.gen_moves(legal_only);}
         let mut _moves = self.moves;
         _moves.order_by_capture_value(|m: &Move| self.captured_piece(m));
         _moves
@@ -534,7 +534,7 @@ impl Board {
     {
         self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
     }
-    pub fn gen_moves(&mut self, legal_only: bool, captures_only: bool) {
+    pub fn gen_moves(&mut self, legal_only: bool) {
         self.moves.clear();
         let white = self.move_color == Color::White as i8;
         let color_bb: BBPiece = if white {
@@ -946,10 +946,6 @@ impl Board {
                 BBPiece::White | BBPiece::Black => unimplemented!()
             }
         }
-        if captures_only {
-            // Filter out non-capture moves
-            self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
-        }
     }
     fn gen_sliding_moves(&mut self, idx: usize, legal_only: bool, orth: bool, diag: bool) {
         let color_bb: BBPiece = if self.move_color == Color::White as i8 {
@@ -1164,7 +1160,7 @@ impl Board {
                 let _square = util::bb_gs_low_bit(bb);
                 if _square != 64 {
                     let mut k_attacks = KING_ATTACKS[_square] & !self.bitboards[color_bb as usize];
-                    //later, add check to see if king can move to these squares - i.e., by generating opp attacks
+                    //later, add EFFICIENT! check to see if king can move to these squares - i.e., by generating opp attacks
                     attacks += k_attacks.count_ones();
                 }
             }
