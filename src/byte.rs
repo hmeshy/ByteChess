@@ -192,7 +192,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     // based on the current board state and the given time limit.
     tt.next_age();
     let mut depth = 0;
-    let mut moves = board.get_ordered_moves(false,true);
+    let mut moves = board.get_ordered_moves(false,true, false);
     let mut alpha = i32::MIN + 1;
     let mut best_move = moves.first().clone(); // Return the first legal move as a placeholder
     let mut previous_best_move = best_move.clone();
@@ -234,6 +234,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     best_move
 }
 fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable) -> i32 {
+    let r = 3; // Reduction factor
     if board.is_draw() {
         return 0; // Draw by repetition or 50 move; checked before hash to avoid draws on decreasing depth!
     }
@@ -252,7 +253,28 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     if depth == 0 {
             return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
     }
-    let mut moves = board.get_ordered_moves(false, false); // <-- no &
+    let is_check = board::is_check(board);
+    if depth >= r && !is_check && !board.is_pawn_endgame() { //null move conditions met
+        // Perform null move pruning
+        board::make_null_move(board);
+        let eval = -minimax(board, depth - r, depth_searched + 1, -beta, -alpha, think_time, timer, tt);
+        board::undo_null_move(board);
+        if eval >= beta {
+            tt.store(TTEntry {
+                zobrist: board.zobrist_hash,
+                best_move: None,
+                depth,
+                score: beta,
+                bound: Bound::Lower,
+                age: tt.age,
+            });
+            return beta; // Beta cut-off
+        }
+        if eval > alpha {
+            alpha = eval; // Update alpha
+        }
+    }
+    let mut moves = board.get_ordered_moves(false, false, false); // <-- no &
     if let Some(bm) = tt_best_move {
         let pos = moves.iter().position(|m| *m == bm);
         if let Some(pos) = pos {
@@ -293,7 +315,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         board::undo_move(board);
     }
     if !has_moves {
-        if board::is_check(board) {
+        if is_check {
             return (depth_searched - 100000); // Checkmate
         } else {
             return 0; // Stalemate
@@ -312,15 +334,13 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
 }
 // to_do -> include checks to make eval a truly quiet position
 fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32) -> i32 {
-    board.gen_moves(false);
     let eval = util::evaluate(board);
     if eval >= beta {
         return beta;
     } else if eval >= alpha {
         alpha = eval;
     }
-    board.captures_only();
-    let mut moves = board.moves;
+    let mut moves = board.get_ordered_moves(false, false, true);
     if depth_searched <= 2 * depth && moves.len() != 0
     {
         for m in moves.iter(){
