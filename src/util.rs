@@ -535,7 +535,7 @@ pub fn evaluate(board: &board::Board) -> i32 { //fast_eval stc -> +94.3 +/- 41.8
     }
     score * board.move_color as i32 // Adjust score based on the current player's color
 }
-fn pawn_gain(pawn_bb: u64, is_white: bool) -> i32 {
+fn pawn_gain(pawn_bb: u64, is_white: bool) -> i32 { // to do - passed pawns (and maybe backward pawns)
     let mut score: i32 = 0;
     let mut bitboard = pawn_bb;
     let mut pawns = [0u64; 8];
