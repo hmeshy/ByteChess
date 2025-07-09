@@ -250,10 +250,10 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         }
         tt_best_move = entry.best_move;
     }
+    let is_check = board.is_check();
     if depth == 0 {
-            return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
+            return minimax_captures(board, depth_searched, alpha, beta, depth_searched, is_check);
     }
-    let is_check = board::is_check(board);
     if depth >= r && !is_check && !board.is_pawn_endgame() { //null move conditions met
         // Perform null move pruning
         board::make_null_move(board);
@@ -333,19 +333,33 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     alpha
 }
 // to_do -> include checks to make eval a truly quiet position
-fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32) -> i32 {
+fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, check: bool) -> i32 {
+    let mut moves = board.get_ordered_moves(false, true, false); // generate all (legal) moves
     let eval = util::evaluate(board);
-    if eval >= beta {
-        return beta;
-    } else if eval >= alpha {
-        alpha = eval;
+        if eval >= beta {
+            return beta;
+        if eval < alpha - PIECE_VALUES[board::BBPiece::Queen as usize]
+        {
+            return alpha; // "Hopeless position" cut-off
+        }
+        } else if eval >= alpha {
+            alpha = eval;
+        }
+    if !check
+    {
+        moves = board.get_ordered_moves(true, true, true); // generate only forcing moves
     }
-    let mut moves = board.get_ordered_moves(false, false, true);
-    if depth_searched <= 2 * depth && moves.len() != 0
+    else if moves.len() == 0
+    {
+        return depth_searched - 100000; // Checkmate
+    }
+    let mut delta = depth + 4;
+    if (check && depth > 3 && depth_searched <= depth + 4) || depth_searched <= 2 * depth && moves.len() != 0
     {
         for m in moves.iter(){
             board::make_move(board, &m);
-            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth);
+            let u_check = board.is_check();
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, u_check);
             if eval >= beta {
                 board::undo_move(board);
                 return beta; // Beta cut-off

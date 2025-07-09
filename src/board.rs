@@ -126,23 +126,6 @@ impl Board {
         combined
     }
 }
-
-//info to store for unmaking moves
-//bitboards - need to undo
-//move color - just * -1
-//fullmove_number - same rules but in reverse
-//castling rights & en passant, half_move clock, move history, captured pieces - need to be stored and retrieve
-pub fn is_check(board: &mut Board) -> bool {
-        // Check if the current player is in checkmate
-        board.move_color = -board.move_color; // Reverse the move color to check if the opponent's king is attacked
-        let mut ret = true;
-        if !board.king_is_attacked() {
-            ret = false
-        }
-        board.move_color = -board.move_color; // Reverse the move color back!!
-        ret
-    }
-// Helper: get piece index for Zobrist table
 fn zobrist_piece_index(piece: BBPiece, color: BBPiece) -> usize {
     let piece_idx = match piece {
         BBPiece::Pawn => 0,
@@ -510,11 +493,11 @@ fn bishop_attacks(square: usize, occupancy: u64) -> u64
     magic::BISHOP_ATTACKS[index]
 }
 impl Board {
-    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool) -> util::MoveStack {
+    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, forcing_only: bool) -> util::MoveStack {
         if !is_generated{
         self.gen_moves(legal_only);}
-        if captures_only {
-            self.captures_only();
+        if forcing_only {
+            self.forcing_only();
         }
         let mut _moves = self.moves;
         _moves.order_by_capture_value(|m: &Move| self.captured_piece(m));
@@ -548,9 +531,35 @@ impl Board {
             self.moves.push(*m);
         }
     }
-    pub fn captures_only(&mut self)
+    pub fn forcing_only(&mut self)
     {
-        self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
+        let mut i = self.moves.len();
+        while i > 0 
+        {
+            i -= 1;
+            let m = &self.moves.get(i);
+            if (m.flags() & MoveFlag::Capture as u8 == 0) && !self.move_is_check(m) {
+                self.moves.remove(i);
+            }
+        }    
+    }
+    fn move_is_check(&mut self, m: &Move) -> bool {
+        // Make the move temporarily
+        board::make_move(self, m);
+        // Check if the king is attacked after the move
+        let is_check = self.is_check();
+        // Undo the move
+        board::undo_move(self);
+        is_check
+    }
+    pub fn is_check(&mut self) -> bool {
+        self.move_color = -self.move_color; // Reverse the move color to check if the opponent's king is attacked
+        let mut ret = true;
+        if !self.king_is_attacked() {
+            ret = false
+        }
+        self.move_color = -self.move_color; // Reverse the move color back!!
+        ret
     }
     pub fn is_pawn_endgame(&self) -> bool {
         self.combined([BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen], false) == 0

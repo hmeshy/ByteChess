@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::board::BBPiece;
 use crate::board::Board;
 use crate::{board, PIECE_VALUES};
@@ -86,6 +88,12 @@ impl MoveStack {
         } else {
             Move{info:0}
         }
+    }
+    pub fn get(&self, index: usize) -> Move {
+        if index >= self.len {
+            panic!("Index out of bounds: {}", index);
+        } 
+        self.data[index].unwrap_or_else(|| Move { info: 0 })
     }
     pub fn move_to_front(&mut self, index: usize) {
         if index >= self.len {
