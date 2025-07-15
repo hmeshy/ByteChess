@@ -13,46 +13,7 @@ mod zobrist;
 mod table;
 pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
-/*fn main() // perft profiling debugging as necessary
-{
-    unsafe {
-        env::set_var("RUST_BACKTRACE", "1");
-    } // debug code
-    let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    board.zobrist_hash = zobrist::zobrist_hash(&board);
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 1, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-    /*for _move in board.moves.iter_mut()
-    {
-        println!("{}",_move);
-    }*/
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 2, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 3, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 4, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 5, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 6, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-    let start = std::time::Instant::now();
-    println!("{}", util::perft(&mut board, 7, false));
-    let duration = start.elapsed();
-    println!("perft took {} ms", duration.as_millis());
-}*/
+
 fn main() {
     use std::io::{self, Write, BufRead};
     let stdin = io::stdin();
@@ -192,11 +153,13 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     // based on the current board state and the given time limit.
     tt.next_age();
     let mut depth = 0;
+    let mut nodes: u64 = 0;
     let mut moves = board.get_ordered_moves(false,true, false);
     let mut alpha = i32::MIN + 1;
     let mut best_move = moves.first().clone(); // Return the first legal move as a placeholder
     let mut previous_best_move = best_move.clone();
     let mut prev_eval = alpha;
+    let mut pv = Vec::new();
     if let Some(entry) = tt.probe(board.zobrist_hash) {
         if let Some(mv) = entry.best_move {
             best_move = mv;
@@ -210,10 +173,12 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
             let mv = moves.remove(pos);
             moves.insert(0, mv);
         }
+        let mut local_pv = Vec::new();
         for m in moves.iter()
         {
             board::make_move(board,&m);
-            let eval = -minimax(board, depth, 0, i32::MIN + 1, -alpha, think_time, timer, tt);
+            let mut child_pv = Vec::new();
+            let eval = -minimax(board, depth, 0, i32::MIN + 1, -alpha, think_time, timer, tt, &mut child_pv, &mut nodes);
             if timer.elapsed().as_millis() > think_time as u128 {
                 // Time is up, break the loop
                 alpha = prev_eval; // Return the previous evaluation if time is up
@@ -222,20 +187,31 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
             if eval > alpha {
                 alpha = eval;
                 best_move = m.clone();
+                local_pv.clear();
+                local_pv.push(m.clone());
+                local_pv.extend(child_pv)
             }
             board::undo_move(board);
         }
-        println!("info score cp {} depth {} pv {} move {}", alpha, depth, best_move, best_move);
+        pv = local_pv;
+        let pv_string = pv.iter().map(|mv| format!("{}", mv)).collect::<Vec<_>>().join(" ");
+        let elapsed = timer.elapsed().as_millis(); // <-- Add this line
+        println!(
+            "info score cp {} depth {} nodes {} time {} pv {} move {}",
+            alpha, depth, nodes, elapsed, pv_string, best_move
+        );
         previous_best_move = best_move.clone();
-        prev_eval = alpha; // Store the previous evaluation
-        alpha = i32::MIN + 1; // Reset alpha for the next iteration
+        prev_eval = alpha;
+        alpha = i32::MIN + 1;
         depth += 1;
     }
     best_move
 }
-fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable) -> i32 {
+fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, pv: &mut Vec<util::Move>, nodes: &mut u64) -> i32 {
+    *nodes += 1;
     let r = 3; // Reduction factor
     if board.is_draw() {
+        pv.clear();
         return 0; // Draw by repetition or 50 move; checked before hash to avoid draws on decreasing depth!
     }
     // TT probe
@@ -243,7 +219,12 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     if let Some(entry) = tt.probe(board.zobrist_hash) {
         if entry.depth >= depth && entry.age == tt.age {
             match entry.bound {
-                Bound::Exact => return entry.score,
+                Bound::Exact => {   
+                    pv.clear();
+                    if let Some(mv) = entry.best_move {
+                        pv.push(mv);
+                    }
+                    return entry.score;}
                 Bound::Lower => if entry.score > alpha { alpha = entry.score; },
                 Bound::Upper => if entry.score < beta { return entry.score; },
             }
@@ -251,13 +232,15 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         tt_best_move = entry.best_move;
     }
     if depth == 0 {
-            return minimax_captures(board, depth_searched, alpha, beta, depth_searched);
+            pv.clear();
+            return minimax_captures(board, depth_searched, alpha, beta, depth_searched, nodes);
     }
     let is_check = board::is_check(board);
     if depth >= r && !is_check && !board.is_pawn_endgame() { //null move conditions met
         // Perform null move pruning
         board::make_null_move(board);
-        let eval = -minimax(board, depth - r, depth_searched + 1, -beta, -alpha, think_time, timer, tt);
+        let mut null_pv = Vec::new();
+        let eval = -minimax(board, depth - r, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut null_pv, nodes);
         board::undo_null_move(board);
         if eval >= beta {
             tt.store(TTEntry {
@@ -268,6 +251,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 bound: Bound::Lower,
                 age: tt.age,
             });
+            pv.clear();
             return beta; // Beta cut-off
         }
         if eval > alpha {
@@ -284,14 +268,19 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     let mut has_moves = false;
     let mut best_score = i32::MIN + 1;
     let mut best_move: Option<util::Move> = None;
+    let mut best_pv: Vec<util::Move> = Vec::new();
     for m in moves.iter(){
         board::make_move(board, &m);
         if !board.king_is_attacked()
         {
             has_moves = true;
-            let eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt);
+            let mut child_pv = Vec::new();
+            let eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, nodes);
             if eval >= beta {
                 board::undo_move(board);
+                pv.clear();
+                pv.push(*m);
+                pv.extend(child_pv);
                 tt.store(TTEntry {
                     zobrist: board.zobrist_hash,
                     best_move: Some(*m),
@@ -306,15 +295,21 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 alpha = eval; // Update alpha
                 best_score = eval;
                 best_move = Some(*m);
+                best_pv.clear();
+                best_pv.push(*m);
+                best_pv.extend(child_pv);
             }
             if timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
+                pv.clear();
+                pv.extend(best_pv.iter());
                 return alpha
             }
         }
         board::undo_move(board);
     }
     if !has_moves {
+        pv.clear();
         if is_check {
             return (depth_searched - 100000); // Checkmate
         } else {
@@ -330,10 +325,13 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         bound: if best_score > i32::MIN + 1 { Bound::Exact } else { Bound::Upper },
         age: tt.age,
     });
+    pv.clear();
+    pv.extend(best_pv.iter());
     alpha
 }
 // to_do -> include checks to make eval a truly quiet position
-fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32) -> i32 {
+fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, nodes: &mut u64) -> i32 {
+    *nodes += 1;
     let eval = util::evaluate(board);
     if eval >= beta {
         return beta;
@@ -345,7 +343,7 @@ fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i3
     {
         for m in moves.iter(){
             board::make_move(board, &m);
-            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth);
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, nodes);
             if eval >= beta {
                 board::undo_move(board);
                 return beta; // Beta cut-off
