@@ -521,12 +521,11 @@ pub fn evaluate(board: &board::Board) -> i32 { //fast_eval stc -> +94.3 +/- 41.8
         let colorbb = if i < 6 { BBPiece::White } else { BBPiece::Black };
         let is_white = colorbb == BBPiece::White;
         let piece_value = PIECE_VALUES[piece as usize];
-        let mobility_value = MOBILITY_VALUES[piece as usize];
         let piece_attacks = if is_white { w_attacks } else { b_attacks };
         let attack_value = piece_attacks[piece as usize];
         let mut bitboard = board.combined([piece, colorbb], true);
         let mut partial_score = 0;
-        partial_score += piece_value * bitboard.count_ones() as i32 + mobility_value * attack_value as i32;
+        partial_score += piece_value * bitboard.count_ones() as i32 + attack_value as i32;
         if (piece == BBPiece::Pawn) {
             partial_score += pawn_gain(bitboard, is_white);
         }

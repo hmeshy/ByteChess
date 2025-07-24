@@ -6,6 +6,7 @@ use std::u8::MAX;
 use crate::magic;
 use crate::util;
 use crate::util::{Color,Move,MoveFlag,Squares};
+use crate::MOBILITY_VALUES;
 use self::strum_macros::EnumIter;
 use self::strum::IntoEnumIterator;
 use crate::{board, PIECE_VALUES};
@@ -27,6 +28,34 @@ pub const KING_ATTACKS: [u64; 64] =[0x0000000000000302, 0x0000000000000705, 0x00
 0x0003020300000000, 0x0007050700000000, 0x000e0a0e00000000, 0x001c141c00000000, 0x0038283800000000, 0x0070507000000000, 0x00e0a0e000000000, 0x00c040c000000000,
 0x0302030000000000, 0x0705070000000000, 0x0e0a0e0000000000, 0x1c141c0000000000, 0x3828380000000000, 0x7050700000000000, 0xe0a0e00000000000, 0xc040c00000000000,
 0x0203000000000000, 0x0507000000000000, 0x0a0e000000000000, 0x141c000000000000, 0x2838000000000000, 0x5070000000000000, 0xa0e0000000000000, 0x40c0000000000000];
+// PSTs adapted from https://www.chessprogramming.org/Simplified_Evaluation_Function
+pub const KNIGHT_PST: [i32; 64] = [0i32; 64];
+pub const BISHOP_PST: [i32; 64] = [
+0i32; 64];
+pub const ROOK_PST: [i32; 64] = [
+ 0i32; 64];
+pub const QUEEN_PST: [i32; 64] = [
+0i32; 64];
+pub const KING_PST: [i32; 64] = [
+-30,-40,-40,-50,-50,-40,-40,-30,
+-30,-40,-40,-50,-50,-40,-40,-30,
+-30,-40,-40,-50,-50,-40,-40,-30,
+-30,-40,-40,-50,-50,-40,-40,-30,
+-20,-30,-30,-40,-40,-30,-30,-20,
+-10,-20,-20,-20,-20,-20,-20,-10,
+ 20, 20,  0,  0,  0,  0, 20, 20,
+ 20, 30, 10, -5,  0,  5, 30, 20
+];
+pub const KING_ENG_PST: [i32; 64] = [
+-50,-40,-30,-20,-20,-30,-40,-50,
+-30,-20,-10,  0,  0,-10,-20,-30,
+-30,-10, 20, 30, 30, 20,-10,-30,
+-30,-10, 30, 40, 40, 30,-10,-30,
+-30,-10, 30, 40, 40, 30,-10,-30,
+-30,-10, 20, 30, 30, 20,-10,-30,
+-30,-30,  0,  0,  0,  0,-30,-30,
+-50,-30,-30,-30,-30,-30,-30,-50
+];
 
 
 // Enum for bitboard piece tables
@@ -1139,55 +1168,99 @@ impl Board {
             BBPiece::Black
         };
         let mut attacks = 0;
+        let mut pst_sum = 0;
         match piece {
             3 => // Knight
             {
+                let pst = &KNIGHT_PST;
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    // Generate knight moves
-                    // Knight moves are L-shaped, 2 squares in one direction and 1 square perpendicular
                     let k_attacks = KNIGHT_ATTACKS[_square] & !self.bitboards[color_bb as usize];
-                    attacks += k_attacks.count_ones();
+                    attacks += k_attacks.count_ones() * MOBILITY_VALUES[BBPiece::Knight as usize] as u32;
+                    pst_sum += if is_white {
+                        pst[_square ^ 56]
+                    } else {
+                        pst[_square]
+                    };
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
             4 => // Bishop
             {
+                let pst = &BISHOP_PST;
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, false, true, is_white);
+                    attacks += self.gen_sliding_mobility(_square as usize, false, true, is_white) * MOBILITY_VALUES[BBPiece::Bishop as usize] as u32;
+                    pst_sum += if is_white {
+                        pst[_square ^ 56]
+                    } else {
+                        pst[_square]
+                    };
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
             5 => // Rook
             {
+                let pst = &ROOK_PST;
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, true, false, is_white);
+                    attacks += self.gen_sliding_mobility(_square as usize, true, false, is_white) * MOBILITY_VALUES[BBPiece::Rook as usize] as u32;
+                    pst_sum += if is_white {
+                        pst[_square ^ 56]
+                    } else {
+                        pst[_square]
+                    };
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
             6 => // Queen
             {
+                let pst = &QUEEN_PST;
                 let mut _square = util::bb_gs_low_bit(bb);
                 while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, true, true, is_white);
+                    attacks += self.gen_sliding_mobility(_square as usize, true, true, is_white) * MOBILITY_VALUES[BBPiece::Queen as usize] as u32;
+                    pst_sum += if is_white {
+                        pst[_square ^ 56]
+                    } else {
+                        pst[_square]
+                    };
                     _square = util::bb_gs_low_bit(bb);
                 }
             }
-            7 => // King
+           7 => // King
             {
-                // Generate king moves
+                let pst_mg = &KING_PST;
+                let pst_eg = &KING_ENG_PST;
+
                 let _square = util::bb_gs_low_bit(bb);
                 if _square != 64 {
-                    let mut k_attacks = KING_ATTACKS[_square] & !self.bitboards[color_bb as usize];
-                    //later, add EFFICIENT! check to see if king can move to these squares - i.e., by generating opp attacks, at least in endgames :D
-                    attacks += k_attacks.count_ones();
+                    let k_attacks = KING_ATTACKS[_square] & !self.bitboards[color_bb as usize];
+                    attacks += k_attacks.count_ones() * MOBILITY_VALUES[BBPiece::King as usize] as u32;
+
+                    // Calculate endgame phase weight (0 = opening, 1 = endgame)
+                    let phase = {
+                        // Typical phase calculation: sum of remaining non-pawn, non-king material
+                        let mut phase = 0;
+                        phase += self.bitboards[BBPiece::Knight as usize].count_ones() * 1;
+                        phase += self.bitboards[BBPiece::Bishop as usize].count_ones() * 1;
+                        phase += self.bitboards[BBPiece::Rook as usize].count_ones() * 2;
+                        phase += self.bitboards[BBPiece::Queen as usize].count_ones() * 4;
+                        let max_phase: u32 = 16; // 2N + 2B + 2R*2 + 2Q*4 = 16
+                        let eg_phase = max_phase.saturating_sub(phase);
+                        eg_phase as f32 / max_phase as f32
+                    };
+
+                    let idx = if is_white { _square ^ 56 } else { _square };
+                    let mg_val = pst_mg[idx];
+                    let eg_val = pst_eg[idx];
+                    let king_pst = ((1.0 - phase) * mg_val as f32 + phase * eg_val as f32).round() as i32;
+
+                    pst_sum += king_pst;
                 }
             }
             _ => unimplemented!()
         }
-        attacks
+        attacks + pst_sum as u32
     }
     fn gen_sliding_mobility(&self, idx: usize, orth: bool, diag: bool, is_white: bool) -> u32 {
         let color_bb: BBPiece = if is_white {
