@@ -217,7 +217,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     // TT probe
     let mut tt_best_move = None;
     if let Some(entry) = tt.probe(board.zobrist_hash) {
-        if entry.depth >= depth && entry.age == tt.age {
+        if entry.depth >= depth /*&& entry.age == tt.age*/ {
             match entry.bound {
                 Bound::Exact => {   
                     pv.clear();
@@ -225,8 +225,8 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                         pv.push(mv);
                     }
                     return entry.score;}
-                Bound::Lower => if entry.score > alpha { alpha = entry.score; },
-                Bound::Upper => if entry.score < beta { return entry.score; },
+                Bound::Lower => if entry.score >= beta { return entry.score; },
+                Bound::Upper => if entry.score <= alpha { return entry.score; },
             }
         }
         tt_best_move = entry.best_move;
@@ -276,6 +276,12 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             has_moves = true;
             let mut child_pv = Vec::new();
             let eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, nodes);
+            if timer.elapsed().as_millis() > think_time as u128 {
+                board::undo_move(board);
+                pv.clear();
+                pv.extend(best_pv.iter());
+                return alpha
+            }
             if eval >= beta {
                 board::undo_move(board);
                 pv.clear();
@@ -298,12 +304,6 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 best_pv.clear();
                 best_pv.push(*m);
                 best_pv.extend(child_pv);
-            }
-            if timer.elapsed().as_millis() > think_time as u128 {
-                board::undo_move(board);
-                pv.clear();
-                pv.extend(best_pv.iter());
-                return alpha
             }
         }
         board::undo_move(board);
