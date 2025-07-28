@@ -1142,6 +1142,39 @@ impl Board {
                 return true;
             }
         }
+        // Dead drawn endgames
+        if self.combined([BBPiece::Pawn, BBPiece::Rook, BBPiece::Queen], false) == 0 {
+            // Only knights, bishops, kings left
+            // Code to check if there are two or fewer pieces (bishop + knight) left combined, returning true unless they are two bishops or a knight and bishop of the same color
+            let knights = self.bitboards[BBPiece::Knight as usize].count_ones();
+            let bishops = self.bitboards[BBPiece::Bishop as usize].count_ones();
+
+            // Only king vs king
+            if knights + bishops == 0 {
+                return true;
+            }
+            // King and single minor vs king
+            if knights + bishops == 1 {
+                return true;
+            }
+            if knights + bishops == 2 {
+                if knights == 2 {
+                    return true;
+                }
+                if bishops == 2 {
+                    if !self.combined([BBPiece::Bishop, BBPiece::White], true) == 0 && !self.combined([BBPiece::Bishop, BBPiece::Black], true) == 0 {
+                        return true; // Two bishops of different colors
+                    }
+                }
+                else {
+                    let w_knight = self.combined([BBPiece::Knight, BBPiece::White], true);
+                    let w_bishop = self.combined([BBPiece::Bishop, BBPiece::White], true);
+                    if (w_knight == 0 || w_bishop == 0) && (w_knight != 0 || w_bishop != 0) {
+                        return true; // Only one on each side
+                    }
+                }        
+            }
+        }
         false
     }
     pub fn compute_mobility(&self) -> ([u32; 8], [u32; 8]) {

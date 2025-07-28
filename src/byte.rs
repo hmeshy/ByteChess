@@ -13,7 +13,6 @@ mod zobrist;
 mod table;
 pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
-
 fn main() {
     use std::io::{self, Write, BufRead};
     let stdin = io::stdin();
@@ -25,6 +24,7 @@ fn main() {
     let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
+    let mut mate_eval = 99900; // Evaluation to find checkmates, can be adjusted
     //let mut board_hist: Vec<String> = Vec::new();
     //board_hist.push(input_fen.clone());
     println!("id name ByteChess");
@@ -46,6 +46,7 @@ fn main() {
                 println!("readyok");
             }
             "ucinewgame" => {
+                mate_eval = 99900; // Reset mate evaluation for new game
                 board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
                 board.zobrist_hash = zobrist::zobrist_hash(&board);
                 tt = TranspositionTable::new();
@@ -130,7 +131,7 @@ fn main() {
                 let start = std::time::Instant::now();
                 let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
                 // ... your move selection logic here ...
-                let m = think(&mut board, think_time, start, &mut tt);
+                let m = think(&mut board, think_time, start, &mut tt, &mut mate_eval);
 
                 // After move selection, update the bot's time
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -147,7 +148,7 @@ fn main() {
         io::stdout().flush().unwrap();
     }
 }
-fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable) -> util::Move {
+fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, mate_eval: &mut i32) -> util::Move {
     // Placeholder for thinking logic
     // This function should implement the logic to find the best move
     // based on the current board state and the given time limit.
@@ -157,6 +158,9 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     let mut moves = board.get_ordered_moves(false,true, false);
     let mut alpha = i32::MIN + 1;
     let mut best_move = moves.first().clone(); // Return the first legal move as a placeholder
+    if moves.len() == 1 { // If there's only one possible move, return it immediately
+        return best_move;
+    }
     let mut previous_best_move = best_move.clone();
     let mut prev_eval = alpha;
     let mut pv = Vec::new();
@@ -200,6 +204,11 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
             "info score cp {} depth {} nodes {} time {} pv {} move {}",
             alpha, depth, nodes, elapsed, pv_string, best_move
         );
+        if alpha >= *mate_eval || alpha <= -*mate_eval {
+                // If the evaluation is a checkmate, return the move we found
+                *mate_eval = alpha + 2;
+                return best_move;
+        }
         previous_best_move = best_move.clone();
         prev_eval = alpha;
         alpha = i32::MIN + 1;
