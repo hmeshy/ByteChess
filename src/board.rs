@@ -539,15 +539,34 @@ fn bishop_attacks(square: usize, occupancy: u64) -> u64
     magic::BISHOP_ATTACKS[index]
 }
 impl Board {
-    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool) -> util::MoveStack {
+    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool, tt_move: Option<util::Move>, killer_moves: &[util::Move; 2], history_table: &[[i32; 64]; 64]) -> util::MoveStack {
         if !is_generated{
         self.gen_moves(legal_only);}
         if captures_only {
             self.captures_only();
         }
         let mut _moves = self.moves;
-        _moves.order_by_capture_value(|m: &Move| self.captured_piece(m));
-        _moves
+        if captures_only
+        {
+            _moves.sort_by_capture_value(|m: &Move| self.captured_piece(m));
+        }
+        // Score moves based on multiple criteria
+        else
+        {_moves.score_moves(|m: &Move| m.score_move(m, tt_move, killer_moves, history_table, self.attacking_piece(m), self.captured_piece(m)));
+        }_moves
+    }
+    fn attacking_piece(&self, m: &Move) -> Option<BBPiece> {
+        if m.flags() & MoveFlag::Capture as u8 != 0 {
+            let from_square = m.from_square() as usize;
+            for (i, &bb) in self.bitboards.iter().enumerate() {
+                if i == BBPiece::White as usize || i == BBPiece::Black as usize {
+                    continue; // Skip color bitboards
+                } else if util::bb_get(bb, from_square) {
+                    return Some(BBPiece::from(i));
+                }
+            }
+        }
+        None
     }
     fn captured_piece(&self, m: &Move) -> Option<BBPiece> {
         if m.flags() & MoveFlag::Capture as u8 != 0 {

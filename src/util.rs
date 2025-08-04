@@ -39,26 +39,26 @@ pub struct Move {
 #[derive(Copy, Clone, Debug)]
 #[derive(PartialEq, Eq)]
 pub struct MoveStack {
-    data: [Option<Move>; 218],
+    data: [Move; 218],
     len: usize,
 }
 impl MoveStack {
     pub fn new() -> Self {
         Self {
-            data: [None; 218],
+            data: [Move::null(); 218],
             len: 0,
         }
     }
     pub fn clear(&mut self) {
         for i in 0..self.len {
-            self.data[i] = None;
+            self.data[i] = Move::null();
         }
         self.len = 0;
     }
     pub fn extend<I: IntoIterator<Item = Move>>(&mut self, iter: I) {
         for mv in iter {
             if self.len < self.data.len() {
-                self.data[self.len] = Some(mv);
+                self.data[self.len] = mv;
                 self.len += 1;
             } else {
                 break; // Stop if capacity is reached
@@ -66,12 +66,15 @@ impl MoveStack {
         }
     }
     pub fn first(&self) -> Move {
-        self.data[0].unwrap_or_else(|| Move { info: 0 })
+        if self.len > 0 {
+            self.data[0]
+        } else {
+            Move { info: 0 }
+        }
     }
-
     pub fn push(&mut self, mv: Move) -> Result<(), &'static str> {
         if self.len < 218 {
-            self.data[self.len] = Some(mv);
+            self.data[self.len] = mv;
             self.len += 1;
             Ok(())
         } else {
@@ -82,7 +85,7 @@ impl MoveStack {
     pub fn pop(&mut self) -> Move {
         if self.len > 0 {
             self.len -= 1;
-            self.data[self.len].take().unwrap_or_else(|| Move { info: 0 })
+            self.data[self.len]
         } else {
             Move{info:0}
         }
@@ -106,9 +109,9 @@ impl MoveStack {
         }
         // Shift elements to the right
         for i in (index..self.len).rev() {
-            self.data[i + 1] = self.data[i].take();
+            self.data[i + 1] = self.data[i];
         }
-        self.data[index] = Some(mv);
+        self.data[index] = mv;
         self.len += 1;
         Ok(())
     }
@@ -116,15 +119,15 @@ impl MoveStack {
     /// Removes and returns the move at the given index, shifting elements to the left.
     pub fn remove(&mut self, index: usize) -> Move {
         if index >= self.len {
-            return Move{info: 0};
+            return Move { info: 0 };
         }
-        let removed = self.data[index].take();
+        let removed = self.data[index];
         for i in index..self.len - 1 {
-            self.data[i] = self.data[i + 1].take();
+            self.data[i] = self.data[i + 1];
         }
         self.len -= 1;
-        self.data[self.len] = None;
-        removed.unwrap_or_else(|| Move { info: 0 })
+        self.data[self.len] = Move::null();
+        removed
     }
 
     pub fn len(&self) -> usize {
@@ -135,14 +138,10 @@ impl MoveStack {
         self.len == 0
     }
     pub fn iter(&self) -> impl Iterator<Item = &Move> {
-        self.data[..self.len]
-            .iter()
-            .filter_map(|opt| opt.as_ref())
+        self.data[..self.len].iter()
     }
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Move> {
-        self.data[..self.len]
-            .iter_mut()
-            .filter_map(|opt| opt.as_mut())
+        self.data[..self.len].iter_mut()
     }
     pub fn retain<F>(&mut self, mut f: F)
     where
@@ -150,19 +149,16 @@ impl MoveStack {
     {
         let mut new_len = 0;
         for i in 0..self.len {
-            if let Some(ref mv) = self.data[i] {
-                if f(mv) {
-                    // Move the element to the new position if needed
-                    if new_len != i {
-                        self.data[new_len] = self.data[i].take();
-                    }
-                    new_len += 1;
+            if f(&self.data[i]) {
+                if new_len != i {
+                    self.data[new_len] = self.data[i];
                 }
+                new_len += 1;
             }
         }
-        // Set the rest to None
+        // Set the rest to Move::null()
         for i in new_len..self.len {
-            self.data[i] = None;
+            self.data[i] = Move::null();
         }
         self.len = new_len;
     }
@@ -170,26 +166,9 @@ impl MoveStack {
     where
         F: FnMut(&Move, &Move) -> std::cmp::Ordering,
     {
-        // Collect all Some(Move) into a Vec
-        let mut moves: Vec<Move> = self
-            .data[..self.len]
-            .iter()
-            .filter_map(|opt| opt.clone())
-            .collect();
-
-        // Sort the Vec
-        moves.sort_by(|a, b| compare(a, b));
-
-        // Write sorted moves back into the array
-        for (i, mv) in moves.into_iter().enumerate() {
-            self.data[i] = Some(mv);
-        }
-        // Set any remaining slots to None (shouldn't be needed if len is unchanged)
-        for i in self.len..self.data.len() {
-            self.data[i] = None;
-        }
+        self.data[..self.len].sort_by(|a, b| compare(a, b));
     }
-    pub fn order_by_capture_value<F>(&mut self, mut captured_piece: F)
+    pub fn sort_by_capture_value<F>(&mut self, mut captured_piece: F)
     where
         F: FnMut(&Move) -> Option<BBPiece>,
     {
@@ -201,6 +180,16 @@ impl MoveStack {
                 .map(|piece| PIECE_VALUES[piece as usize])
                 .unwrap_or(0);
             value_b.cmp(&value_a)
+        });
+    }
+    pub fn score_moves<F>(&mut self, mut score_fn: F)
+    where
+        F: FnMut(&Move) -> i32,
+    {
+        self.sort_by(|a, b| {
+            let score_a = score_fn(a);
+            let score_b = score_fn(b);
+            score_b.cmp(&score_a) // Higher scores first
         });
     }
 }
@@ -230,7 +219,10 @@ impl Move {
         let info = ((flags as u16 & 0xf) << 12) | ((m_from as u16 & 0x3f) << 6) | (m_to as u16 & 0x3f);
         Move { info }
     }
-
+    #[inline]
+    pub fn null() -> Self {
+        Move { info: 0 }
+    }
     #[inline]
     pub fn from_square(&self) -> u8 {
         ((self.info >> 6) & 0x3f) as u8
@@ -259,6 +251,57 @@ impl Move {
     #[inline]
     pub fn set_flags(&mut self, flags: u8) {
         self.info = (self.info & !(0xf << 12)) | (((flags as u16) & 0xf) << 12);
+    }
+    pub fn score_move(&self, m: &Move, tt_move: Option<Move>, killer_moves: &[Move; 2], history_table: &[[i32; 64]; 64], attacking_piece: Option<BBPiece>, captured_piece: Option<BBPiece>) -> i32 {
+        let mut score = 0;
+        
+        // 1. Hash/TT move gets highest priority
+        if let Some(tt_move) = tt_move {
+            if *m == tt_move {
+                return 1_000_000;
+            }
+        }
+        
+        // 2. Winning captures (MVV-LVA: Most Valuable Victim - Least Valuable Attacker)
+        if m.flags() & MoveFlag::Capture as u8 != 0 {
+            if let Some(captured) = captured_piece && let Some(attacker) = attacking_piece {
+                let victim_value = PIECE_VALUES[captured as usize];
+                let attacker_value = PIECE_VALUES[attacker as usize];
+                
+                // MVV-LVA scoring
+                score += 10000 + victim_value * 10 - attacker_value;
+                
+                // Bonus for capturing with less valuable pieces
+                if victim_value >= attacker_value {
+                    score += 5000; // Good capture
+                }
+            }
+        }
+        
+        // 3. Promotions
+        if m.flags() & 8 as u8 != 0 {
+            score += 8000;
+            // Bonus for queen promotion
+            if m.flags() == MoveFlag::QueenPromotion as u8 || 
+            m.flags() == MoveFlag::QueenPromoCapture as u8 {
+                score += 1000;
+            }
+        }
+        
+        // 4. Killer moves (non-captures that caused beta cutoffs)
+        if m.flags() & MoveFlag::Capture as u8 == 0 {
+            if *m == killer_moves[0] {
+                score += 7000;
+            } else if *m == killer_moves[1] {
+                score += 6000;
+            } else {
+                // 5. History heuristic (how often this move was good)
+                let from = m.from_square() as usize;
+                let to = m.to_square() as usize;
+                score += history_table[from][to];
+            }
+        }
+        score
     }
 }
 
