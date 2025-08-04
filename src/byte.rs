@@ -366,14 +366,27 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     let mut best_move: Option<util::Move> = None;
     let mut best_pv: Vec<util::Move> = Vec::new();
 
-    for m in moves.iter(){
+    for (m_index, m) in moves.iter().enumerate(){
 
         board::make_move(board, &m);
         if !board.king_is_attacked()
         {
             has_moves = true;
             let mut child_pv = Vec::new();
-            let eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info);
+            let mut eval;
+            // late move reduction
+            if depth >= 3 && m_index >= 4 
+            {
+                // Reduce the depth for later moves
+                eval = -minimax(board, depth - 2, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info);
+                if eval > alpha { // a promising move, so search deeper
+                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info);
+                }
+
+            } else {
+                // Normal search depth
+                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info);
+            }
             if timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
                 pv.clear();
