@@ -203,11 +203,15 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         {
             board::make_move(board,&m);
             let mut child_pv = Vec::new();
-            let mut eval = -minimax(board, depth, 0, prev_eval-WINDOW, prev_eval+WINDOW, think_time, timer, tt, &mut child_pv, search_info);
+            let mut eval = -minimax(board, depth, 0, -prev_eval-WINDOW, -prev_eval+WINDOW, think_time, timer, tt, &mut child_pv, search_info);
             if eval <= prev_eval - WINDOW || eval >= prev_eval + WINDOW {
                 // If the evaluation is outside the window, we need to re-search with a wider window
                 eval = -minimax(board, depth, 0, alpha, -alpha, think_time, timer, tt, &mut child_pv, search_info);
             }
+            /*println!(
+            "info move_ {} depth {} val {} nodes {}",
+            m, depth, eval, search_info.nodes,
+         );*/
             if timer.elapsed().as_millis() > think_time as u128 {
                 // Time is up, break the loop
                 if alpha == i32::MIN + 1 {
