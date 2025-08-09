@@ -1,3 +1,5 @@
+[![Rust](https://img.shields.io/badge/Rust-2021-orange)](https://www.rust-lang.org/)
+![Elo](https://img.shields.io/badge/Elo-~1800-blue)
 # Byte – A Rust Chess Engine Without Piece-Square Evaluation
 
 **Byte** is an actively developed chess engine written in Rust.  
@@ -14,7 +16,7 @@ Currently, I estimate the engine’s strength to be around **~1800 Elo** (as of 
 
 **Download & Run**
 
-- **Option 1:** Download the `.exe` file from the [latest release](#) and run it directly.
+- **Option 1:** Download the `.exe` file from the latest release and run it directly.
 - **Option 2:** Clone the repository and run:
 
 ```bash
