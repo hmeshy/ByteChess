@@ -1,4 +1,5 @@
 #![allow(unused)]
+use std::cmp::max;
 use std::env;
 use std::fmt::Display;
 use std::fs::File;
@@ -13,9 +14,10 @@ mod zobrist;
 mod table;
 pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 0];
+pub const WINDOW: i32 = 33; // Search window for aspiration
+
 pub struct SearchInfo {
     pub killer_moves: [[util::Move; 2]; 64], // Two killer moves per depth
-    pub history_table: [[i32; 64]; 64],     // History heuristic table
     pub nodes: u64,
 }
 
@@ -27,7 +29,6 @@ impl SearchInfo {
             0 as u8,
             util::MoveFlag::Quiet as u8,
             ); 2]; 64], // Max depth 64
-            history_table: [[0; 64]; 64],
             nodes: 0,
         }
     }
@@ -39,23 +40,9 @@ impl SearchInfo {
         }
     }
     
-    pub fn update_history(&mut self, mv: util::Move, depth: i32) {
-        let from = mv.from_square() as usize;
-        let to = mv.to_square() as usize;
-        self.history_table[from][to] += depth * depth; // Deeper = more important
-    }
     pub fn next_move(&mut self) {
         // Reset killer moves and history table for the next move
-        self.age();
         self.nodes = 0; // Reset node count for the next move
-    }
-    fn age(&mut self) {
-        // age history table
-        for row in &mut self.history_table {
-            for cell in row {
-                *cell /= 2; // Gradually forget old history
-            }
-        }
     }
 }
 fn main() {
@@ -193,14 +180,15 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     tt.next_age();
     search_info.next_move();
     let mut depth = 0;    
-    let mut moves = board.get_ordered_moves(false,true, false, None, &search_info.killer_moves[0], &search_info.history_table);
-    let mut alpha = i32::MIN + 1;
+    let mut moves = board.get_ordered_moves(false,true, false, None, &search_info.killer_moves[0]);
+    let inf = i32::MIN + 1;
+    let mut alpha = inf;
     let mut best_move = moves.first().clone(); // Save the first (ordered) legal move as a placeholder
     if moves.len() == 1 { // If there's only one possible move, return it immediately
         return best_move;
     }
     let mut previous_best_move = best_move.clone();
-    let mut prev_eval = alpha;
+    let mut prev_eval = 0;
     let mut pv = Vec::new();
     if let Some(entry) = tt.probe(board.zobrist_hash) {
         if let Some(mv) = entry.best_move {
@@ -209,13 +197,21 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         }
     }
     while timer.elapsed().as_millis() < think_time as u128 {
-        moves = board.get_ordered_moves(false,true, false, Some(previous_best_move), &search_info.killer_moves[0], &search_info.history_table);
+        moves = board.get_ordered_moves(false,true, false, Some(previous_best_move), &search_info.killer_moves[0]);
         let mut local_pv = Vec::new();
         for m in moves.iter()
         {
             board::make_move(board,&m);
             let mut child_pv = Vec::new();
-            let eval = -minimax(board, depth, 0, i32::MIN + 1, -alpha, think_time, timer, tt, &mut child_pv, search_info);
+            let mut eval = -minimax(board, depth, 0, prev_eval-WINDOW, prev_eval+WINDOW, think_time, timer, tt, &mut child_pv, search_info);
+            if eval <= prev_eval - WINDOW || eval >= prev_eval + WINDOW {
+                // If the evaluation is outside the window, we need to re-search with a wider window
+                eval = -minimax(board, depth, 0, alpha, -alpha, think_time, timer, tt, &mut child_pv, search_info);
+            }
+            println!(
+            "info move_ {} depth {} val {} nodes {}",
+            m, depth, eval, search_info.nodes,
+         );
             if timer.elapsed().as_millis() > think_time as u128 {
                 // Time is up, break the loop
                 if alpha == i32::MIN + 1 {
@@ -288,8 +284,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         0 as u8,
         0 as u8,
         util::MoveFlag::Quiet as u8,
-        ); 2]
-    };
+        ); 2]};
     if depth == 0 {
             pv.clear();
             return minimax_captures(board, depth_searched, alpha, beta, depth_searched, search_info);
@@ -317,7 +312,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             alpha = eval; // Update alpha
         }
     }
-    let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves, &search_info.history_table);
+    let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves);
     let mut has_moves = false;
     let mut best_score = i32::MIN + 1;
     let mut best_move: Option<util::Move> = None;
@@ -353,7 +348,6 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 board::undo_move(board);
                 if m.flags() & 8 as u8 == 0 {
                     search_info.update_killer(depth_searched as usize, *m);
-                    search_info.update_history(*m, depth);
                 }
                 pv.clear();
                 pv.push(*m);
@@ -413,7 +407,7 @@ fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i3
         0 as u8,
         0 as u8,
         util::MoveFlag::Quiet as u8,
-        ); 2], &search_info.history_table);
+        ); 2]);
     if depth_searched <= 2 * depth && moves.len() != 0
     {
         for m in moves.iter(){

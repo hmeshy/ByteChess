@@ -252,7 +252,7 @@ impl Move {
     pub fn set_flags(&mut self, flags: u8) {
         self.info = (self.info & !(0xf << 12)) | (((flags as u16) & 0xf) << 12);
     }
-    pub fn score_move(&self, m: &Move, tt_move: Option<Move>, killer_moves: &[Move; 2], history_table: &[[i32; 64]; 64], attacking_piece: Option<BBPiece>, captured_piece: Option<BBPiece>) -> i32 {
+    pub fn score_move(&self, m: &Move, tt_move: Option<Move>, killer_moves: &[Move; 2], attacking_piece: Option<BBPiece>, captured_piece: Option<BBPiece>) -> i32 {
         let mut score = 0;
         
         // 1. Hash/TT move gets highest priority
@@ -281,11 +281,6 @@ impl Move {
         // 3. Promotions
         if m.flags() & 8 as u8 != 0 {
             score += 8000;
-            // Bonus for queen promotion
-            if m.flags() == MoveFlag::QueenPromotion as u8 || 
-            m.flags() == MoveFlag::QueenPromoCapture as u8 {
-                score += 1000;
-            }
         }
         
         // 4. Killer moves (non-captures that caused beta cutoffs)
@@ -294,11 +289,6 @@ impl Move {
                 score += 7000;
             } else if *m == killer_moves[1] {
                 score += 6000;
-            } else {
-                // 5. History heuristic (how often this move was good)
-                let from = m.from_square() as usize;
-                let to = m.to_square() as usize;
-                score += history_table[from][to];
             }
         }
         score

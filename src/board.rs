@@ -539,7 +539,7 @@ fn bishop_attacks(square: usize, occupancy: u64) -> u64
     magic::BISHOP_ATTACKS[index]
 }
 impl Board {
-    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool, tt_move: Option<util::Move>, killer_moves: &[util::Move; 2], history_table: &[[i32; 64]; 64]) -> util::MoveStack {
+    pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool, tt_move: Option<util::Move>, killer_moves: &[util::Move; 2]) -> util::MoveStack {
         if !is_generated{
         self.gen_moves(legal_only);}
         if captures_only {
@@ -552,7 +552,7 @@ impl Board {
         }
         // Score moves based on multiple criteria
         else
-        {_moves.score_moves(|m: &Move| m.score_move(m, tt_move, killer_moves, history_table, self.attacking_piece(m), self.captured_piece(m)));
+        {_moves.score_moves(|m: &Move| m.score_move(m, tt_move, killer_moves, self.attacking_piece(m), self.captured_piece(m)));
         }_moves
     }
     fn attacking_piece(&self, m: &Move) -> Option<BBPiece> {
