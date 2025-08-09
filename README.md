@@ -1,3 +1,7 @@
+[![Rust](https://img.shields.io/badge/Rust-2021-orange)](https://www.rust-lang.org/)
+![Elo](https://img.shields.io/badge/Elo-~1800-blue)
+[![License](https://img.shields.io/github/license/hmeshy/ByteChess)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/hmeshy/ByteChess)](https://github.com/hmeshy/ByteChess/releases/latest)
 # Byte – A Rust Chess Engine Without Piece-Square Evaluation
 
 **Byte** is an actively developed chess engine written in Rust.  
