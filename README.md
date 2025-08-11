@@ -1,5 +1,3 @@
-[![Rust](https://img.shields.io/badge/Rust-2021-orange)](https://www.rust-lang.org/)
-![Elo](https://img.shields.io/badge/Elo-~1800-blue)
 # Byte – A Rust Chess Engine Without Piece-Square Evaluation
 
 **Byte** is an actively developed chess engine written in Rust.  
