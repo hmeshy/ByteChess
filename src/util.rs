@@ -1,8 +1,26 @@
 use crate::board::BBPiece;
 use crate::board::Board;
-use crate::{board, PIECE_VALUES};
-use crate::MOBILITY_VALUES;
+use crate::{board, PIECE_VALUES, PIECE_VALUES_EG, MOBILITY_VALUES, MOBILITY_VALUES_EG};
+const DOUBLED_PAWN_PENALTY: i32 = 1;
+const ISOLATED_PAWN_PENALTY: i32 = 5;
+const PAWN_ADVANCE_BONUS: i32 = 3;
+const PAWN_ISLAND_PENALTY: i32 = 2;
+// King safety constants
+const KING_SAFETY_TABLE: [i32; 100] = [
+    0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
+   18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
+   68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
+  140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+  260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+  377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+  494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+  500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+  500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+  500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+];
 
+// Attack weights for different piece types
+const ATTACK_WEIGHTS: [i32; 8] = [0, 0, 0, 1, 1, 2, 4, 0]; // Knight, Bishop, Rook, Queen
 
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -545,67 +563,351 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
     *bb &= !(1 << low_bit);
     low_bit
 }
-pub fn evaluate(board: &board::Board) -> i32 { //fast_eval stc -> +94.3 +/- 41.8 ltc -> 68.6 +/- 41.0
-    let mut score = 0;
-    let (w_attacks, b_attacks) = board.compute_mobility();
-    for i in 0..12 {
-        // for now piece values, next mobility too!
-        let piece = BBPiece::from((i%6)+2);
-        let colorbb = if i < 6 { BBPiece::White } else { BBPiece::Black };
-        let is_white = colorbb == BBPiece::White;
-        let piece_value = PIECE_VALUES[piece as usize];
-        let piece_attacks = if is_white { w_attacks } else { b_attacks };
-        let attack_value = piece_attacks[piece as usize];
-        let mut bitboard = board.combined([piece, colorbb], true);
-        let mut partial_score = 0;
-        partial_score += piece_value * bitboard.count_ones() as i32 + attack_value as i32;
-        if (piece == BBPiece::Pawn) {
-            partial_score += pawn_gain(bitboard, is_white);
-        }
-        score += if is_white { partial_score } else { -partial_score };
-        partial_score = 0; // Reset for next piece
-    }
-    score * board.move_color as i32 // Adjust score based on the current player's color
+pub fn evaluate(board: &board::Board, eg: bool) -> i32 {
+    let phase = board.get_phase();
+    let material_score = material_score(board, false);
+    let mobility_score = mobility_score(board, false);
+    let king_safety_score = ((1.0 - phase) * king_safety_score(board) as f32).round() as i32;
+    let king_edge_score = (phase * king_edge(board) as f32).round() as i32;
+    let pawn_structure_score = pawn_struct_score(board);
+    return (material_score + mobility_score + king_safety_score + pawn_structure_score) * board.move_color as i32;
 }
-fn pawn_gain(pawn_bb: u64, is_white: bool) -> i32 { // to do - passed pawns (and maybe backward pawns)
-    let mut score: i32 = 0;
+pub fn mg_evaluate(board: &board::Board) -> i32 { 
+    let material_score = material_score(board, false);
+    let mobility_score = mobility_score(board, false);
+    let king_safety_score = king_safety_score(board);
+    let pawn_structure_score = pawn_struct_score(board);
+    return (material_score + mobility_score + king_safety_score + pawn_structure_score) * board.move_color as i32;
+}
+pub fn eg_evaluate(board: &board::Board) -> i32 { 
+    let material_score = material_score(board, true);
+    let mobility_score = mobility_score(board, true);
+    let king_edge_score = king_edge(board);
+    let pawn_score = eg_pawn_score(board);
+    return (material_score + mobility_score + king_edge_score + pawn_score) * board.move_color as i32;
+}
+pub fn king_edge(board: &board::Board) -> i32 {
+    let white_distance = king_distance_to_corner(board, true);
+    let black_distance = king_distance_to_corner(board, false);
+    
+    // Return difference (closer to corner = higher penalty)
+    (white_distance - black_distance) * 20
+}
+
+fn king_distance_to_corner(board: &board::Board, is_white: bool) -> i32 {
+    let king_color = if is_white { BBPiece::White } else { BBPiece::Black };
+    
+    // Find king position
+    let king_bb = board.bitboards[BBPiece::King as usize] & board.bitboards[king_color as usize];
+    if king_bb == 0 {
+        return 0; // No king (shouldn't happen)
+    }
+    
+    let mut king_bb_copy = king_bb;
+    let king_square = bb_gs_low_bit(&mut king_bb_copy);
+    let king_file = king_square % 8;
+    let king_rank = king_square / 8;
+    
+    // Calculate distance to each corner and return the minimum
+    let corners = [
+        (0, 0),  // a1
+        (0, 7),  // a8  
+        (7, 0),  // h1
+        (7, 7),  // h8
+    ];
+    
+    let mut min_distance = 3;
+    
+    for &(corner_file, corner_rank) in &corners {
+        // Use Chebyshev distance (king move distance)
+        let distance = (king_file as i32 - corner_file).abs().max(
+                      (king_rank as i32 - corner_rank).abs());
+        min_distance = min_distance.min(distance);
+    }
+    
+    min_distance
+}
+pub fn print_eval(board: &board::Board) {
+    let material_score = material_score(board, false);
+    let mobility_score = mobility_score(board, false);
+    let king_safety_score = king_safety_score(board);
+    let pawn_structure_score = pawn_struct_score(board);
+    println!("Material Score: {}", material_score* board.move_color as i32);
+    println!("Mobility Score: {}", mobility_score* board.move_color as i32);
+    println!("Pawn Structure Score: {}", pawn_structure_score * board.move_color as i32);
+    println!("King Safety Score: {}", king_safety_score * board.move_color as i32);
+    println!("Total Evaluation: {}", (material_score + mobility_score + king_safety_score + pawn_structure_score)* board.move_color as i32);
+}
+fn material_score(board: &board::Board, is_endgame: bool) -> i32 {
+    let mut score = 0;
+    
+    // More efficient: iterate through piece types directly
+    for piece_type in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
+        let piece_value;
+        if is_endgame
+        {
+            piece_value = PIECE_VALUES_EG[piece_type as usize];
+        } else {
+            piece_value = PIECE_VALUES[piece_type as usize];
+        }
+        let white_pieces = board.combined([piece_type, BBPiece::White], true);
+        let black_pieces = board.combined([piece_type, BBPiece::Black], true);
+        let white_count = white_pieces.count_ones() as i32;
+        let black_count = black_pieces.count_ones() as i32;
+        score += piece_value * (white_count - black_count);
+    }
+    score
+}
+
+fn mobility_score(board: &board::Board, is_endgame: bool) -> i32 {
+    let mut score = 0;
+    let (w_attacks, b_attacks) = board.compute_mobility(is_endgame);
+    for i in 3..7 {
+        let white_mobility = w_attacks[i] as i32;
+        let black_mobility = b_attacks[i] as i32;
+        score += white_mobility - black_mobility;
+    }
+    score
+}
+fn pawn_struct_score(board: &board::Board) -> i32 {
+    let white_pawns = board.combined([BBPiece::Pawn, BBPiece::White], true);
+    let black_pawns = board.combined([BBPiece::Pawn, BBPiece::Black], true);
+    pawn_evaluation(white_pawns, true) - pawn_evaluation(black_pawns, false)
+}
+fn eg_pawn_score(board: &board::Board) -> i32 {
+    let white_pawns = board.combined([BBPiece::Pawn, BBPiece::White], true);
+    let black_pawns = board.combined([BBPiece::Pawn, BBPiece::Black], true);
+    eg_pawn_evaluation(white_pawns, true) - eg_pawn_evaluation(black_pawns, false)
+}
+fn eg_pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
+    if pawn_bb == 0 {
+        return 0;
+    }
+    
+    let mut score = 0;
+    let mut pawns_per_file = [0u8; 8];
     let mut bitboard = pawn_bb;
-    let mut pawns = [0u64; 8];
+    
+    // First pass: count pawns per file and add advancement bonuses
     while bitboard != 0 {
         let square = bb_gs_low_bit(&mut bitboard);
-        let rank = square / 8;
-        let file = square % 8;
-        // Add score based on the rank of the pawn
-        score += 3 * if is_white {
+        let rank = (square / 8) as u8;
+        let file = (square % 8) as usize;
+        
+        pawns_per_file[file] += 1;
+        
+        // Pawn advancement bonus =
+        let advancement = if is_white {
             2_i32.pow((rank as u32).saturating_sub(1))
         } else {
             2_i32.pow((6u32).saturating_sub(rank as u32))
         };
-        // Adjust pawn structure based on file
-        pawns[file] = pawns[file] + 1;
+        score += PAWN_ADVANCE_BONUS * 3 * (advancement as i32);
     }
-    let mut prev = 7;
-    let mut prev_prev = 7;
-    for i in 0..8 {
-        if pawns[i] > 0 {
-            if prev == 0 || prev > 6 { // If new pawn island
-                score -= 2; // pawn island penalty
-            }
-            if pawns[i] > 1 { // If doubled pawns
-                score -= (pawns[i] * pawns[i]) as i32; // doubled pawn penalty
-            }
-            prev_prev = prev;
-            prev = pawns[i];
-        } else {
-            if prev > 0 && prev_prev == 0 { // If isolated (not wing!) pawn
-                score -= (5 * prev * prev) as i32; // isolated pawn penalty
-            }
-            prev_prev = prev;
-            prev = 0;
+    
+    // Second pass: evaluate pawn structure
+    for file in 0..8 {
+        let pawn_count = pawns_per_file[file];
+        if pawn_count == 0 {
+            continue;
+        }
+        
+        // Doubled/tripled pawn penalty (exponential)
+        if pawn_count > 1 {
+            score -= DOUBLED_PAWN_PENALTY * 3 *  (pawn_count as i32 - 1) * (pawn_count as i32 - 1);
+        }
+        
+        // Isolated pawn penalty
+        let has_support = (file > 0 && pawns_per_file[file - 1] > 0) || 
+                         (file < 7 && pawns_per_file[file + 1] > 0);
+        if !has_support {
+            score -= ISOLATED_PAWN_PENALTY;
         }
     }
     score
 }
+fn pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
+    if pawn_bb == 0 {
+        return 0;
+    }
+    
+    let mut score = 0;
+    let mut pawns_per_file = [0u8; 8];
+    let mut bitboard = pawn_bb;
+    
+    // First pass: count pawns per file and add advancement bonuses
+    while bitboard != 0 {
+        let square = bb_gs_low_bit(&mut bitboard);
+        let rank = (square / 8) as u8;
+        let file = (square % 8) as usize;
+        
+        pawns_per_file[file] += 1;
+        
+        // Pawn advancement bonus =
+        let advancement = if is_white {
+            2_i32.pow((rank as u32).saturating_sub(1))
+        } else {
+            2_i32.pow((6u32).saturating_sub(rank as u32))
+        };
+        score += PAWN_ADVANCE_BONUS * (advancement as i32);
+    }
+    
+    // Second pass: evaluate pawn structure
+    for file in 0..8 {
+        let pawn_count = pawns_per_file[file];
+        if pawn_count == 0 {
+            continue;
+        }
+        
+        // Doubled/tripled pawn penalty (exponential)
+        if pawn_count > 1 {
+            score -= DOUBLED_PAWN_PENALTY * (pawn_count as i32 - 1) * (pawn_count as i32 - 1);
+        }
+        
+        // Isolated pawn penalty
+        let has_support = (file > 0 && pawns_per_file[file - 1] > 0) || 
+                         (file < 7 && pawns_per_file[file + 1] > 0);
+        if !has_support {
+            score -= ISOLATED_PAWN_PENALTY;
+        }
+    }
+    
+    // Pawn islands penalty
+    let pawn_islands = count_pawn_islands(&pawns_per_file);
+    if pawn_islands > 1 {
+        score -= PAWN_ISLAND_PENALTY * (pawn_islands as i32 - 1);
+    }
+    
+    score
+}
+
+fn count_pawn_islands(pawns_per_file: &[u8; 8]) -> u8 {
+    let mut islands = 0;
+    let mut in_island = false;
+    
+    for &pawn_count in pawns_per_file {
+        if pawn_count > 0 {
+            if !in_island {
+                islands += 1;
+                in_island = true;
+            }
+        } else {
+            in_island = false;
+        }
+    }
+    islands
+}
+pub fn king_safety_score(board: &board::Board) -> i32 {
+    let white_score = evaluate_king_safety(board, true);
+    let black_score = evaluate_king_safety(board, false);
+    white_score - black_score
+}
+
+fn evaluate_king_safety(board: &board::Board, is_white: bool) -> i32 {
+    let king_color = if is_white { BBPiece::White } else { BBPiece::Black };
+    let enemy_color = if is_white { BBPiece::Black } else { BBPiece::White };
+    
+    // Find king position
+    let king_bb = board.bitboards[BBPiece::King as usize] & board.bitboards[king_color as usize];
+    if king_bb == 0 {
+        return 0; // No king (shouldn't happen)
+    }
+    
+    let mut king_bb_copy = king_bb;
+    let king_square = bb_gs_low_bit(&mut king_bb_copy);
+    
+    let mut attack_units = 0;
+    let mut attackers = 0;
+    
+    // Get king zone (king + surrounding squares)
+    let king_zone = get_king_zone(king_square);
+    
+    // Check attacks from enemy pieces
+    for piece_type in 3..7 { // Knight, Bishop, Rook, Queen
+        let enemy_pieces = board.bitboards[piece_type] & board.bitboards[enemy_color as usize];
+        let mut piece_bb = enemy_pieces;
+        
+        while piece_bb != 0 {
+            let piece_square = bb_gs_low_bit(&mut piece_bb);
+            let attacks = board.get_piece_attacks(piece_type, piece_square);
+            
+            if attacks & king_zone != 0 {
+                attackers += 1;
+                let zone_attacks = (attacks & king_zone).count_ones() as i32;
+                attack_units += ATTACK_WEIGHTS[piece_type] * zone_attacks;
+            }
+        }
+    }
+    
+    // Bonus for multiple attackers
+    if attackers >= 2 {
+        attack_units += 3;
+    }
+    if attackers >= 3 {
+        attack_units += 5 * (attackers - 2); // More attackers, more bonus;
+    }
+    
+    // Pawn shelter bonus/penalty
+    let shelter_penalty = evaluate_pawn_shelter(board, king_square, is_white);
+    attack_units += shelter_penalty;
+    
+    // Convert attack units to score using safety table
+    let index = std::cmp::min(attack_units as usize, 99);
+    -KING_SAFETY_TABLE[index] // Negative because this is penalty for our king
+}
+
+fn get_king_zone(king_square: usize) -> u64 {
+    let mut zone = board::KING_ATTACKS[king_square];
+    zone |= 1u64 << king_square; // Include king square itself
+    zone
+}
+
+fn evaluate_pawn_shelter(board: &board::Board, king_square: usize, is_white: bool) -> i32 {
+    let king_file = king_square % 8;
+    let king_rank = king_square / 8;
+    let mut penalty = 0;
+    if king_file >= 3 && king_file <= 5 { // on d,e,f files / not castled
+        penalty += 3; 
+    }
+    let own_pawns = if is_white {
+        board.combined([BBPiece::Pawn, BBPiece::White], true)
+    } else {
+        board.combined([BBPiece::Pawn, BBPiece::Black], true)
+    };
+    
+    // Check files around king (king file and adjacent files)
+    for file_offset in -1i32..=1i32 {
+        let file = (king_file as i32 + file_offset) as usize;
+        if file >= 8 { continue; }
+        
+        let mut has_pawn = false;
+        let mut closest_pawn_distance = 8;
+        
+        // Look for pawns in front of king on this file
+        for rank in 0..8 {
+            let square = rank * 8 + file;
+            if own_pawns & (1u64 << square) != 0 {
+                has_pawn = true;
+                let distance = if is_white {
+                    (rank as i32 - king_rank as i32).abs()
+                } else {
+                    (king_rank as i32 - rank as i32).abs()
+                };
+                if distance < closest_pawn_distance {
+                    closest_pawn_distance = distance;
+                }
+            }
+        }
+        
+        if !has_pawn {
+            penalty += 6; // No pawn shield on this file
+        } else if closest_pawn_distance > 2 {
+            penalty += 3 * (closest_pawn_distance - 2); // Pawn too far away
+        }
+    }
+    penalty
+}
+
 pub fn perft(bd: &mut board::Board, depth: u8) -> u64 {
     let mut count = 0;
     bd.gen_moves(true);

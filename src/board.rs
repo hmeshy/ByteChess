@@ -6,10 +6,9 @@ use std::u8::MAX;
 use crate::magic;
 use crate::util;
 use crate::util::{Color,Move,MoveFlag,Squares};
-use crate::MOBILITY_VALUES;
 use self::strum_macros::EnumIter;
 use self::strum::IntoEnumIterator;
-use crate::{board, PIECE_VALUES};
+use crate::{board, PIECE_VALUES, MOBILITY_VALUES, MOBILITY_VALUES_EG};
 use crate::zobrist::{ZOBRIST_CASTLING,ZOBRIST_EP,ZOBRIST_PIECES,ZOBRIST_SIDE};
 
 pub const KNIGHT_ATTACKS: [u64; 64] =[0x0000000000020400, 0x0000000000050800, 0x00000000000a1100, 0x0000000000142200, 0x0000000000284400, 0x0000000000508800, 0x0000000000a01000, 0x0000000000402000,
@@ -28,35 +27,6 @@ pub const KING_ATTACKS: [u64; 64] =[0x0000000000000302, 0x0000000000000705, 0x00
 0x0003020300000000, 0x0007050700000000, 0x000e0a0e00000000, 0x001c141c00000000, 0x0038283800000000, 0x0070507000000000, 0x00e0a0e000000000, 0x00c040c000000000,
 0x0302030000000000, 0x0705070000000000, 0x0e0a0e0000000000, 0x1c141c0000000000, 0x3828380000000000, 0x7050700000000000, 0xe0a0e00000000000, 0xc040c00000000000,
 0x0203000000000000, 0x0507000000000000, 0x0a0e000000000000, 0x141c000000000000, 0x2838000000000000, 0x5070000000000000, 0xa0e0000000000000, 0x40c0000000000000];
-// PSTs adapted from https://www.chessprogramming.org/Simplified_Evaluation_Function
-pub const KNIGHT_PST: [i32; 64] = [0i32; 64];
-pub const BISHOP_PST: [i32; 64] = [
-0i32; 64];
-pub const ROOK_PST: [i32; 64] = [
- 0i32; 64];
-pub const QUEEN_PST: [i32; 64] = [
-0i32; 64];
-pub const KING_PST: [i32; 64] = [
--30,-40,-40,-50,-50,-40,-40,-30,
--30,-40,-40,-50,-50,-40,-40,-30,
--30,-40,-40,-50,-50,-40,-40,-30,
--30,-40,-40,-50,-50,-40,-40,-30,
--20,-30,-30,-40,-40,-30,-30,-20,
--10,-20,-20,-20,-20,-20,-20,-10,
- 20, 20,  0,  0,  0,  0, 20, 20,
- 20, 30, 10, -5,  0,  5, 30, 20
-];
-pub const KING_ENG_PST: [i32; 64] = [
--50,-40,-30,-20,-20,-30,-40,-50,
--30,-20,-10,  0,  0,-10,-20,-30,
--30,-10, 20, 30, 30, 20,-10,-30,
--30,-10, 30, 40, 40, 30,-10,-30,
--30,-10, 30, 40, 40, 30,-10,-30,
--30,-10, 20, 30, 30, 20,-10,-30,
--30,-30,  0,  0,  0,  0,-30,-30,
--50,-30,-30,-30,-30,-30,-30,-50
-];
-
 
 // Enum for bitboard piece tables
 #[derive(Copy, Clone, PartialEq, Eq, EnumIter, Debug)]
@@ -601,7 +571,17 @@ impl Board {
         self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
     }
     pub fn is_pawn_endgame(&self) -> bool {
-        self.combined([BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen], false) == 0
+        return self.get_phase() > 0.8;
+    }
+    pub fn get_phase(&self) -> f32 {
+        let mut phase = 0;
+        phase += self.bitboards[BBPiece::Knight as usize].count_ones() * 1;
+        phase += self.bitboards[BBPiece::Bishop as usize].count_ones() * 1;
+        phase += self.bitboards[BBPiece::Rook as usize].count_ones() * 2;
+        phase += self.bitboards[BBPiece::Queen as usize].count_ones() * 4;
+        let max_phase: u32 = 16; // 2N + 2B + 2R*2 + 2Q*4 = 16
+        let eg_phase = max_phase.saturating_sub(phase);
+        eg_phase as f32 / max_phase as f32
     }
     pub fn gen_moves(&mut self, legal_only: bool) {
         self.moves.clear();
@@ -1196,144 +1176,74 @@ impl Board {
         }
         false
     }
-    pub fn compute_mobility(&self) -> ([u32; 8], [u32; 8]) {
+    pub fn compute_mobility(&self, is_endgame: bool) -> ([u32; 8], [u32; 8]) {
         let mut white_mobility = [0u32; 8];
         let mut black_mobility = [0u32; 8];
 
-        // For each piece type, count pseudo-legal moves for both sides
-        for piece in 3..8 { // Assuming 3..8 are piece types AND pawns are treated differently!
-            // White
-            let mut white_bb = self.bitboards[piece] & self.bitboards[BBPiece::White as usize];
-            white_mobility[piece] = self.count_piece_mobility(piece, &mut white_bb, true);
-
-            // Black
-            let mut black_bb = self.bitboards[piece] & self.bitboards[BBPiece::Black as usize];
-            black_mobility[piece] = self.count_piece_mobility(piece, &mut black_bb, false);
+        for piece in 3..8 { // Knight, Bishop, Rook, Queen, King
+            white_mobility[piece] = self.count_piece_mobility(piece, true, is_endgame);
+            black_mobility[piece] = self.count_piece_mobility(piece, false, is_endgame);
         }
         (white_mobility, black_mobility)
     }
-    fn count_piece_mobility(&self, piece: usize, bb: &mut u64, is_white: bool) -> u32
-    {
-        let color_bb: BBPiece = if is_white {
-            BBPiece::White
-        } else {
-            BBPiece::Black
-        };
-        let mut attacks = 0;
-        let mut pst_sum = 0;
-        match piece {
-            3 => // Knight
-            {
-                let pst = &KNIGHT_PST;
-                let mut _square = util::bb_gs_low_bit(bb);
-                while _square != 64 {
-                    let k_attacks = KNIGHT_ATTACKS[_square] & !self.bitboards[color_bb as usize];
-                    attacks += k_attacks.count_ones() * MOBILITY_VALUES[BBPiece::Knight as usize] as u32;
-                    pst_sum += if is_white {
-                        pst[_square ^ 56]
-                    } else {
-                        pst[_square]
-                    };
-                    _square = util::bb_gs_low_bit(bb);
-                }
-            }
-            4 => // Bishop
-            {
-                let pst = &BISHOP_PST;
-                let mut _square = util::bb_gs_low_bit(bb);
-                while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, false, true, is_white) * MOBILITY_VALUES[BBPiece::Bishop as usize] as u32;
-                    pst_sum += if is_white {
-                        pst[_square ^ 56]
-                    } else {
-                        pst[_square]
-                    };
-                    _square = util::bb_gs_low_bit(bb);
-                }
-            }
-            5 => // Rook
-            {
-                let pst = &ROOK_PST;
-                let mut _square = util::bb_gs_low_bit(bb);
-                while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, true, false, is_white) * MOBILITY_VALUES[BBPiece::Rook as usize] as u32;
-                    pst_sum += if is_white {
-                        pst[_square ^ 56]
-                    } else {
-                        pst[_square]
-                    };
-                    _square = util::bb_gs_low_bit(bb);
-                }
-            }
-            6 => // Queen
-            {
-                let pst = &QUEEN_PST;
-                let mut _square = util::bb_gs_low_bit(bb);
-                while _square != 64 {
-                    attacks += self.gen_sliding_mobility(_square as usize, true, true, is_white) * MOBILITY_VALUES[BBPiece::Queen as usize] as u32;
-                    pst_sum += if is_white {
-                        pst[_square ^ 56]
-                    } else {
-                        pst[_square]
-                    };
-                    _square = util::bb_gs_low_bit(bb);
-                }
-            }
-           7 => // King
-            {
-                let pst_mg = &KING_PST;
-                let pst_eg = &KING_ENG_PST;
-
-                let _square = util::bb_gs_low_bit(bb);
-                if _square != 64 {
-                    let k_attacks = KING_ATTACKS[_square] & !self.bitboards[color_bb as usize];
-                    attacks += k_attacks.count_ones() * MOBILITY_VALUES[BBPiece::King as usize] as u32;
-
-                    // Calculate endgame phase weight (0 = opening, 1 = endgame)
-                    let phase = {
-                        // Typical phase calculation: sum of remaining non-pawn, non-king material
-                        let mut phase = 0;
-                        phase += self.bitboards[BBPiece::Knight as usize].count_ones() * 1;
-                        phase += self.bitboards[BBPiece::Bishop as usize].count_ones() * 1;
-                        phase += self.bitboards[BBPiece::Rook as usize].count_ones() * 2;
-                        phase += self.bitboards[BBPiece::Queen as usize].count_ones() * 4;
-                        let max_phase: u32 = 16; // 2N + 2B + 2R*2 + 2Q*4 = 16
-                        let eg_phase = max_phase.saturating_sub(phase);
-                        eg_phase as f32 / max_phase as f32
-                    };
-
-                    let idx = if is_white { _square ^ 56 } else { _square };
-                    let mg_val = pst_mg[idx];
-                    let eg_val = pst_eg[idx];
-                    let king_pst = ((1.0 - phase) * mg_val as f32 + phase * eg_val as f32).round() as i32;
-
-                    pst_sum += king_pst;
-                }
-            }
-            _ => unimplemented!()
+    
+    fn count_piece_mobility(&self, piece: usize, is_white: bool, is_endgame: bool) -> u32 {
+        let color_bb = if is_white { BBPiece::White } else { BBPiece::Black };
+        let mut piece_bb = self.bitboards[piece] & self.bitboards[color_bb as usize];
+        let mut total_mobility = 0;
+        
+        while piece_bb != 0 {
+            let square = util::bb_gs_low_bit(&mut piece_bb);
+            let mobility = self.get_piece_square_mobility(piece, square, is_white);
+            total_mobility += mobility * if is_endgame { MOBILITY_VALUES_EG[piece] as u32 } else { MOBILITY_VALUES[piece] as u32 };
         }
-        attacks + pst_sum as u32
+        
+        total_mobility
     }
-    fn gen_sliding_mobility(&self, idx: usize, orth: bool, diag: bool, is_white: bool) -> u32 {
-        let color_bb: BBPiece = if is_white {
-            BBPiece::White
-        } else {
-            BBPiece::Black
+    pub fn get_piece_attacks(&self, piece_type: usize, square: usize) -> u64 {
+        match piece_type {
+            3 => self::KNIGHT_ATTACKS[square],
+            4 => { // Bishop
+                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+                bishop_attacks(square, blockers)
+            }
+            5 => { // Rook
+                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+                rook_attacks(square, blockers)
+            }
+            6 => { // Queen
+                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+                rook_attacks(square, blockers) | bishop_attacks(square, blockers)
+            }
+            _ => 0u64,
+        }
+    }
+    fn get_piece_square_mobility(&self, piece: usize, square: usize, is_white: bool) -> u32 {
+        let own_pieces = if is_white { 
+            self.bitboards[BBPiece::White as usize] 
+        } else { 
+            self.bitboards[BBPiece::Black as usize] 
         };
-        let own_pieces = self.bitboards[color_bb as usize];
-        let opp_pieces = self.bitboards[1 - (color_bb as usize)];
-        let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
-
-        let mut attacks = 0u64;
-        if orth {
-            attacks |= rook_attacks(idx, blockers);
-        }
-        if diag {
-            attacks |= bishop_attacks(idx, blockers);
-        }
-        // Remove own pieces from attack set
-        let targets = attacks & !own_pieces;
-        // Iterate over all target squares
-        targets.count_ones()
+        
+        let attacks = match piece {
+            3 => KNIGHT_ATTACKS[square], // Knight
+            4 => { // Bishop
+                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+                bishop_attacks(square, blockers)
+            }
+            5 => { // Rook
+                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+                rook_attacks(square, blockers)
+            }
+            6 => { // Queen
+                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
+                rook_attacks(square, blockers) | bishop_attacks(square, blockers)
+            }
+            7 => KING_ATTACKS[square], // King
+            _ => 0u64,
+        };
+        
+        // Count squares this piece can move to (excluding own pieces)
+        (attacks & !own_pieces).count_ones()
     }
 }
