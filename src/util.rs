@@ -204,11 +204,14 @@ impl MoveStack {
     where
         F: FnMut(&Move) -> i32,
     {
-        self.sort_by(|a, b| {
-            let score_a = score_fn(a);
-            let score_b = score_fn(b);
-            score_b.cmp(&score_a) // Higher scores first
-        });
+        let mut scored: Vec<(i32, Move)> = self.data[..self.len]
+            .iter()
+            .map(|m| (score_fn(m), *m))
+            .collect();
+        scored.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        for (i, &(_, m)) in scored.iter().enumerate() {
+            self.data[i] = m;
+        }
     }
 }
 
@@ -563,28 +566,14 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
     *bb &= !(1 << low_bit);
     low_bit
 }
-pub fn evaluate(board: &board::Board, eg: bool) -> i32 {
+pub fn evaluate(board: &board::Board) -> i32 {
     let phase = board.get_phase();
-    let material_score = material_score(board, false);
-    let mobility_score = mobility_score(board, false);
+    let material_score = material_score(board, phase);
+    let mobility_score = mobility_score(board, phase);
     let king_safety_score = ((1.0 - phase) * king_safety_score(board) as f32).round() as i32;
     let king_edge_score = (phase * king_edge(board) as f32).round() as i32;
     let pawn_structure_score = pawn_struct_score(board);
     return (material_score + mobility_score + king_safety_score + pawn_structure_score) * board.move_color as i32;
-}
-pub fn mg_evaluate(board: &board::Board) -> i32 { 
-    let material_score = material_score(board, false);
-    let mobility_score = mobility_score(board, false);
-    let king_safety_score = king_safety_score(board);
-    let pawn_structure_score = pawn_struct_score(board);
-    return (material_score + mobility_score + king_safety_score + pawn_structure_score) * board.move_color as i32;
-}
-pub fn eg_evaluate(board: &board::Board) -> i32 { 
-    let material_score = material_score(board, true);
-    let mobility_score = mobility_score(board, true);
-    let king_edge_score = king_edge(board);
-    let pawn_score = eg_pawn_score(board);
-    return (material_score + mobility_score + king_edge_score + pawn_score) * board.move_color as i32;
 }
 pub fn king_edge(board: &board::Board) -> i32 {
     let white_distance = king_distance_to_corner(board, true);
@@ -628,8 +617,9 @@ fn king_distance_to_corner(board: &board::Board, is_white: bool) -> i32 {
     min_distance
 }
 pub fn print_eval(board: &board::Board) {
-    let material_score = material_score(board, false);
-    let mobility_score = mobility_score(board, false);
+    let phase = board.get_phase();
+    let material_score = material_score(board, phase);
+    let mobility_score = mobility_score(board, phase);
     let king_safety_score = king_safety_score(board);
     let pawn_structure_score = pawn_struct_score(board);
     println!("Material Score: {}", material_score* board.move_color as i32);
@@ -638,18 +628,13 @@ pub fn print_eval(board: &board::Board) {
     println!("King Safety Score: {}", king_safety_score * board.move_color as i32);
     println!("Total Evaluation: {}", (material_score + mobility_score + king_safety_score + pawn_structure_score)* board.move_color as i32);
 }
-fn material_score(board: &board::Board, is_endgame: bool) -> i32 {
+fn material_score(board: &board::Board, phase: f32) -> i32 {
     let mut score = 0;
     
     // More efficient: iterate through piece types directly
     for piece_type in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
         let piece_value;
-        if is_endgame
-        {
-            piece_value = PIECE_VALUES_EG[piece_type as usize];
-        } else {
-            piece_value = PIECE_VALUES[piece_type as usize];
-        }
+        piece_value = ((phase * PIECE_VALUES_EG[piece_type as usize] as f32) + ((1.0 - phase) * PIECE_VALUES[piece_type as usize] as f32)).round() as i32;
         let white_pieces = board.combined([piece_type, BBPiece::White], true);
         let black_pieces = board.combined([piece_type, BBPiece::Black], true);
         let white_count = white_pieces.count_ones() as i32;
@@ -659,9 +644,9 @@ fn material_score(board: &board::Board, is_endgame: bool) -> i32 {
     score
 }
 
-fn mobility_score(board: &board::Board, is_endgame: bool) -> i32 {
+fn mobility_score(board: &board::Board, phase: f32) -> i32 {
     let mut score = 0;
-    let (w_attacks, b_attacks) = board.compute_mobility(is_endgame);
+    let (w_attacks, b_attacks) = board.compute_mobility(phase);
     for i in 3..7 {
         let white_mobility = w_attacks[i] as i32;
         let black_mobility = b_attacks[i] as i32;

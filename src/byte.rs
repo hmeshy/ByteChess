@@ -1,4 +1,5 @@
 #![allow(unused)]
+use core::hash;
 use std::cmp::max;
 use std::env;
 use std::fmt::Display;
@@ -294,7 +295,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         ); 2]};
     if depth == 0 {
             pv.clear();
-            return minimax_captures(board, depth_searched, alpha, beta, depth_searched, search_info, eg);
+            return minimax_captures(board, depth_searched, alpha, beta, depth_searched, search_info);
     }
     let is_check = board::is_check(board);
     if !eg && depth >= r && !is_check { //null move conditions met
@@ -319,13 +320,62 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             alpha = eval; // Update alpha
         }
     }
-    let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves);
     let mut has_moves = false;
     let mut best_score = i32::MIN + 1;
     let mut best_move: Option<util::Move> = None;
     let mut best_pv: Vec<util::Move> = Vec::new();
-
+    // If a hash move exists, try it first
+    if let Some(hash_move) = tt_best_move {
+        // Only try if the hash move is legal in this position
+        let m = hash_move;
+        board::make_move(board, &m);
+        if !board.king_is_attacked() {
+            has_moves = true;
+            let mut child_pv = Vec::new();
+            let mut eval;
+            // late move reduction not applied to hash move
+            eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg);
+            if timer.elapsed().as_millis() > think_time as u128 {
+                board::undo_move(board);
+                pv.clear();
+                pv.extend(best_pv.iter());
+                return alpha;
+            }
+            if eval >= beta {
+                board::undo_move(board);
+                if m.flags() & 8 as u8 == 0 {
+                    search_info.update_killer(depth_searched as usize, m);
+                }
+                pv.clear();
+                pv.push(m);
+                pv.extend(child_pv);
+                tt.store(TTEntry {
+                    zobrist: board.zobrist_hash,
+                    best_move: Some(m),
+                    depth,
+                    score: beta,
+                    bound: Bound::Lower,
+                    age: tt.age,
+                });
+                return beta;
+            }
+            if eval > alpha {
+                alpha = eval;
+                best_score = eval;
+                best_move = Some(m);
+                best_pv.clear();
+                best_pv.push(m);
+                best_pv.extend(child_pv);
+            }
+        }
+        board::undo_move(board);
+    }
+    let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves);
     for (m_index, m) in moves.iter().enumerate(){
+        if m_index == 0 && let Some(hash_move) = tt_best_move
+        {
+            continue; // Skip the hash move if it was already tried
+        }
         board::make_move(board, &m);
         if !board.king_is_attacked()
         {
@@ -402,9 +452,9 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     alpha
 }
 // to_do -> include checks to make eval a truly quiet position
-fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, search_info: &mut SearchInfo, eg: bool) -> i32 {
+fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, search_info: &mut SearchInfo) -> i32 {
     search_info.nodes += 1;
-    let eval = util::evaluate(board, eg);
+    let eval = util::evaluate(board);
     if eval >= beta {
         return beta;
     } else if eval >= alpha {
@@ -419,7 +469,7 @@ fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i3
     {
         for m in moves.iter(){
             board::make_move(board, &m);
-            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, search_info, eg);
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, search_info);
             if eval >= beta {
                 board::undo_move(board);
                 return beta; // Beta cut-off

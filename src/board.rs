@@ -1176,18 +1176,18 @@ impl Board {
         }
         false
     }
-    pub fn compute_mobility(&self, is_endgame: bool) -> ([u32; 8], [u32; 8]) {
+    pub fn compute_mobility(&self, phase: f32) -> ([u32; 8], [u32; 8]) {
         let mut white_mobility = [0u32; 8];
         let mut black_mobility = [0u32; 8];
 
         for piece in 3..8 { // Knight, Bishop, Rook, Queen, King
-            white_mobility[piece] = self.count_piece_mobility(piece, true, is_endgame);
-            black_mobility[piece] = self.count_piece_mobility(piece, false, is_endgame);
+            white_mobility[piece] = self.count_piece_mobility(piece, true, phase);
+            black_mobility[piece] = self.count_piece_mobility(piece, false, phase);
         }
         (white_mobility, black_mobility)
     }
     
-    fn count_piece_mobility(&self, piece: usize, is_white: bool, is_endgame: bool) -> u32 {
+    fn count_piece_mobility(&self, piece: usize, is_white: bool, phase: f32) -> u32 {
         let color_bb = if is_white { BBPiece::White } else { BBPiece::Black };
         let mut piece_bb = self.bitboards[piece] & self.bitboards[color_bb as usize];
         let mut total_mobility = 0;
@@ -1195,7 +1195,10 @@ impl Board {
         while piece_bb != 0 {
             let square = util::bb_gs_low_bit(&mut piece_bb);
             let mobility = self.get_piece_square_mobility(piece, square, is_white);
-            total_mobility += mobility * if is_endgame { MOBILITY_VALUES_EG[piece] as u32 } else { MOBILITY_VALUES[piece] as u32 };
+            let mg = MOBILITY_VALUES[piece] as u32;
+            let eg = MOBILITY_VALUES_EG[piece] as u32;
+            let weighted = ((1.0 - phase) * mg as f32 + phase * eg as f32).round() as u32;
+            total_mobility += mobility * weighted;
         }
         
         total_mobility
