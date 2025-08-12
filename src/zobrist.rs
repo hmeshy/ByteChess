@@ -19,6 +19,22 @@ pub const ZOBRIST_CASTLING: [u64; 16] = [0xef9888b7bf0977e2, 0xd15aef045453e8f4,
 pub const ZOBRIST_EP: [u64; 8] = [0x50ff6223f6716689, 0x82459e7126ba8867, 0xff744b4468e7514b, 0x1d3b9b4e46f9244f, 0xd06ae4a5bf079d26, 0x083762936c139d1f, 0xf693fffda762136f, 0xec2c7948fe18b1ed];
 pub const ZOBRIST_SIDE: u64 = 0xf555d6867b5b6a88;
 
+pub fn zobrist_pawn_hash(board: &Board) -> u64 { // only use when first getting the hash!!
+    let mut hash = 0u64;
+
+    // Pieces
+    for sq in 0..64 {
+        for color in 0..=1 { // 0 = White, 1 = Black
+            let bb_piece = BBPiece::Pawn;
+            let bb_color = if color == 0 { BBPiece::White } else { BBPiece::Black };
+            if board.get([bb_piece, bb_color], sq) {
+                let piece_idx = 6 * color; // 0..11
+                hash ^= ZOBRIST_PIECES[piece_idx][sq];
+            }
+        }
+    }
+    hash
+}
 pub fn zobrist_hash(board: &Board) -> u64 { // only use when first getting the hash!!
     let mut hash = 0u64;
 

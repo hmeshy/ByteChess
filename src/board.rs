@@ -27,7 +27,8 @@ pub const KING_ATTACKS: [u64; 64] =[0x0000000000000302, 0x0000000000000705, 0x00
 0x0003020300000000, 0x0007050700000000, 0x000e0a0e00000000, 0x001c141c00000000, 0x0038283800000000, 0x0070507000000000, 0x00e0a0e000000000, 0x00c040c000000000,
 0x0302030000000000, 0x0705070000000000, 0x0e0a0e0000000000, 0x1c141c0000000000, 0x3828380000000000, 0x7050700000000000, 0xe0a0e00000000000, 0xc040c00000000000,
 0x0203000000000000, 0x0507000000000000, 0x0a0e000000000000, 0x141c000000000000, 0x2838000000000000, 0x5070000000000000, 0xa0e0000000000000, 0x40c0000000000000];
-
+pub const MAX_PHASE: u8 = 16;
+pub const PIECE_PHASE_VALUES: [u8; 8]= [0,0,0,1,1,2,4,0]; // Pawn, Knight, Bishop, Rook, Queen
 // Enum for bitboard piece tables
 #[derive(Copy, Clone, PartialEq, Eq, EnumIter, Debug)]
 pub enum BBPiece {
@@ -67,6 +68,7 @@ pub struct Board {
     pub halfmove_clock: u8,
     pub fullmove_number: u16,
     pub zobrist_hash: u64,
+    pub pawn_hash: u64, // Zobrist hash for pawn structure
     pub moves: util::MoveStack,
     pub state_history: Vec<([bool; 4], Option<usize>, u8)>,
     // Move history: stack of all moves
@@ -74,6 +76,9 @@ pub struct Board {
     // Captures history: stack of (from_piece, to_piece) for each capture
     pub captures_history: Vec<(BBPiece, BBPiece)>,
     pub position_history: Vec<u64>,
+    pub pawn_position_history: Vec<u64>,
+    pub phase: u8,
+    pub material_score: i32, // Material score for evaluation
 }
 
 impl Board {
@@ -190,6 +195,7 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
     // Check if castling eligibility has changed
     // Check which piece has moved
     board.position_history.push(board.zobrist_hash);
+    board.pawn_position_history.push(board.pawn_hash);
     board.zobrist_hash ^= ZOBRIST_CASTLING[castling_rights_to_bits(&board.castling_rights)];
     if from_index != to_index { // do not update many things for null moves
         if board.get([BBPiece::King], from_index) {
@@ -236,7 +242,12 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
                     if board.get([piece], to_index) {
                         captured = Some((color, piece));
                         board.set([piece], to_index, false); // Remove captured piece
+                        board.remove_score(color, piece); // Update material score and phase
                         board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(piece, color)][to_index as usize];
+                        if piece == BBPiece::Pawn {
+                            // Remove pawn from hash
+                            board.pawn_hash ^= ZOBRIST_PIECES[zobrist_piece_index(piece, color)][to_index as usize];
+                        }
                         break;
                     }
                 }
@@ -271,6 +282,10 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
         }
         board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(_piece, _color)][from_index as usize];
         board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(_piece, _color)][to_index as usize];
+        if _piece == BBPiece::Pawn {
+            board.pawn_hash ^= ZOBRIST_PIECES[zobrist_piece_index(_piece, _color)][from_index as usize];
+            board.pawn_hash ^= ZOBRIST_PIECES[zobrist_piece_index(_piece, _color)][to_index as usize];
+        }
 
         if let Some(capture) = captured {
             board.captures_history.push(capture);
@@ -278,25 +293,31 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
         if flags & 0x8 != 0 { // Pawn Promotion
         // Remove pawn from hash
         board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Pawn, _color)][to_index as usize];
+        board.pawn_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Pawn, _color)][to_index as usize];
         // Remove pawn from board
         board.set([BBPiece::Pawn], to_index, false);
+        board.remove_score(_color, BBPiece:: Pawn); // Update material score and phase
 
         // Add promoted piece to board and hash
         match flags & 0x3 { // Get Promotion Piece
             0 => {
                 board.set([BBPiece::Knight], to_index, true);
+                board.add_score(_color, BBPiece:: Knight); // Update material score and phase
                 board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Knight, _color)][to_index as usize];
             },
             1 => {
                 board.set([BBPiece::Bishop], to_index, true);
+                board.add_score(_color, BBPiece::Bishop); // Update material score and phase
                 board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Bishop, _color)][to_index as usize];
             },
             2 => {
                 board.set([BBPiece::Rook], to_index, true);
+                board.add_score(_color, BBPiece::Rook); // Update material score and phase
                 board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Rook, _color)][to_index as usize];
             },
             3 => {
                 board.set([BBPiece::Queen], to_index, true);
+                board.add_score(_color, BBPiece::Queen); // Update material score and phase
                 board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Queen, _color)][to_index as usize];
             },
             _ => return Err("Invalid promotion type".to_string()),
@@ -312,7 +333,9 @@ pub fn make_move(board: &mut Board, _move: & Move) -> Result<(), String> {
                 to_index.wrapping_add(8)
             };        
             board.set([BBPiece::Pawn, BBPiece::White, BBPiece::Black], captured_pawn_index, false); // Clear the captured pawn
+            board.remove_score(opp_color, BBPiece::Pawn); // Update material score and phase
             board.zobrist_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Pawn, opp_color)][captured_pawn_index as usize];
+            board.pawn_hash ^= ZOBRIST_PIECES[zobrist_piece_index(BBPiece::Pawn, opp_color)][captured_pawn_index as usize];
         }
         if flags & 0x2 != 0 && flags & 0xC == 0 { // Castling
             if from_index == Squares::E1 as u8 && to_index == Squares::G1 as u8 { // White King-side castle
@@ -381,6 +404,10 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
         Some(hash) => hash,
         None => return Err("No position history to undo".to_string()),
     };
+    board.pawn_hash = match board.pawn_position_history.pop() {
+        Some(hash) => hash,
+        None => return Err("No pawn position history to undo".to_string()),
+    };
     // Undo move_color and fullmove_number
     if board.move_color == Color::White as i8 {
         // If it's white's turn now, it was black's turn before
@@ -396,6 +423,14 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
     } else {
         return Err("No state history to undo".to_string());
     }
+    let color;
+    if board.move_color == Color::White as i8
+    {
+        color = BBPiece::White
+    }
+    else {
+        color = BBPiece::Black
+    }
     if from_index != to_index {
         // Undo pawn promotion
         if flags & 0x8 != 0 {
@@ -403,36 +438,38 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
             match flags & 0x3 {
                 0 => {
                     board.set([BBPiece::Knight], to_index, false);
+                    board.remove_score(color, BBPiece::Knight); // Update material score and phase
                 },
                 1 => {
                     board.set([BBPiece::Bishop], to_index, false);
+                    board.remove_score(color, BBPiece::Bishop); // Update material score and phase
                 },
                 2 => {
                     board.set([BBPiece::Rook], to_index, false);
+                    board.remove_score(color, BBPiece::Rook); // Update material score and phase
                 }
                 3 => {
                     board.set([BBPiece::Queen], to_index, false);
+                    board.remove_score(color, BBPiece::Queen); // Update material score and phase
                 }
                 _ => return Err("Invalid promotion type".to_string()),
             }
             // Restore pawn
             board.set([BBPiece::Pawn], to_index, false);
             board.set([BBPiece::Pawn], from_index, true);
+            board.add_score(color, BBPiece::Pawn); // Update material score and phase
             // Restore color bit
-            if board.move_color == Color::White as i8 {
-                board.set([BBPiece::White], to_index, false);
-                board.set([BBPiece::White], from_index, true);
-            } else {
-                board.set([BBPiece::Black], to_index, false);
-                board.set([BBPiece::Black], from_index, true);
-            }
+            board.set([color], to_index, false);
+            board.set([color], from_index, true);
         } else if flags == MoveFlag::EnPassant as u8 {
             // Undo en passant capture
             board.move_piece([BBPiece::Pawn, if board.move_color == Color::White as i8 { BBPiece::White } else { BBPiece::Black }], to_index, from_index);
             if board.move_color == Color::White as i8 {
                 board.set([BBPiece::Black, BBPiece::Pawn], to_index.wrapping_sub(8), true);
+                board.add_score(BBPiece::Black, BBPiece::Pawn); // Update material score and phase
             } else {
                 board.set([BBPiece::White, BBPiece::Pawn], to_index.wrapping_add(8), true);
+                board.add_score(BBPiece::White, BBPiece::Pawn); // Update material score and phase
             }
         } else if flags & 0x2 != 0 && flags & 0xC == 0 {
             // Undo castling
@@ -487,6 +524,7 @@ pub fn undo_move(board: &mut Board) -> Result<(), String> {
             if let Some((color, piece)) = board.captures_history.pop() {
                     board.set([piece], to_index, true);
                     board.set([color], to_index, true);
+                    board.add_score(color, piece); // Update material score and phase
             }
         }
     }
@@ -571,17 +609,23 @@ impl Board {
         self.moves.retain(|m| m.flags() & MoveFlag::Capture as u8 != 0);
     }
     pub fn is_pawn_endgame(&self) -> bool {
-        return self.get_phase() > 0.8;
+        return self.phase <= 2; // to do - see if elo changes with higher threshold, ie Queen + Rook
     }
-    pub fn get_phase(&self) -> f32 {
-        let mut phase = 0;
-        phase += self.bitboards[BBPiece::Knight as usize].count_ones() * 1;
-        phase += self.bitboards[BBPiece::Bishop as usize].count_ones() * 1;
-        phase += self.bitboards[BBPiece::Rook as usize].count_ones() * 2;
-        phase += self.bitboards[BBPiece::Queen as usize].count_ones() * 4;
-        let max_phase: u32 = 16; // 2N + 2B + 2R*2 + 2Q*4 = 16
-        let eg_phase = max_phase.saturating_sub(phase);
-        eg_phase as f32 / max_phase as f32
+    pub fn add_score(&mut self, color: BBPiece, piece: BBPiece) {
+    if color == BBPiece::White {
+        self.material_score += PIECE_VALUES[piece as usize];
+    } else {
+        self.material_score -= PIECE_VALUES[piece as usize];
+    }
+    self.phase = self.phase.saturating_add(PIECE_PHASE_VALUES[piece as usize]);
+    }
+    pub fn remove_score(&mut self, color: BBPiece, piece: BBPiece) {
+        if color == BBPiece::White {
+            self.material_score -= PIECE_VALUES[piece as usize];
+        } else {
+            self.material_score += PIECE_VALUES[piece as usize];
+        }
+        self.phase = self.phase.saturating_sub(PIECE_PHASE_VALUES[piece as usize]);
     }
     pub fn gen_moves(&mut self, legal_only: bool) {
         self.moves.clear();
@@ -1191,10 +1235,10 @@ impl Board {
         let color_bb = if is_white { BBPiece::White } else { BBPiece::Black };
         let mut piece_bb = self.bitboards[piece] & self.bitboards[color_bb as usize];
         let mut total_mobility = 0;
-        
+        let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
         while piece_bb != 0 {
             let square = util::bb_gs_low_bit(&mut piece_bb);
-            let mobility = self.get_piece_square_mobility(piece, square, is_white);
+            let mobility = self.get_piece_square_mobility(piece, square, is_white, blockers);
             let mg = MOBILITY_VALUES[piece] as u32;
             let eg = MOBILITY_VALUES_EG[piece] as u32;
             let weighted = ((1.0 - phase) * mg as f32 + phase * eg as f32).round() as u32;
@@ -1203,25 +1247,23 @@ impl Board {
         
         total_mobility
     }
-    pub fn get_piece_attacks(&self, piece_type: usize, square: usize) -> u64 {
+    pub fn get_piece_attacks(&self, piece_type: usize, square: usize, blockers: u64) -> u64 {
         match piece_type {
             3 => self::KNIGHT_ATTACKS[square],
             4 => { // Bishop
-                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
                 bishop_attacks(square, blockers)
             }
             5 => { // Rook
-                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
                 rook_attacks(square, blockers)
             }
             6 => { // Queen
-                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
                 rook_attacks(square, blockers) | bishop_attacks(square, blockers)
             }
             _ => 0u64,
         }
     }
-    fn get_piece_square_mobility(&self, piece: usize, square: usize, is_white: bool) -> u32 {
+    #[inline(always)]
+    fn get_piece_square_mobility(&self, piece: usize, square: usize, is_white: bool, blockers: u64) -> u32 {
         let own_pieces = if is_white { 
             self.bitboards[BBPiece::White as usize] 
         } else { 
@@ -1231,15 +1273,12 @@ impl Board {
         let attacks = match piece {
             3 => KNIGHT_ATTACKS[square], // Knight
             4 => { // Bishop
-                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
                 bishop_attacks(square, blockers)
             }
             5 => { // Rook
-                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
                 rook_attacks(square, blockers)
             }
             6 => { // Queen
-                let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
                 rook_attacks(square, blockers) | bishop_attacks(square, blockers)
             }
             7 => KING_ATTACKS[square], // King

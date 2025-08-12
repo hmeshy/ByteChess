@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
 use crate::magic::ROOK_MAGICS;
+use crate::table::PawnTable;
 use crate::table::{TranspositionTable, TTEntry, Bound};
 mod board;
 mod util;
@@ -18,7 +19,8 @@ pub const PIECE_VALUES_EG: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
 pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 2];
 pub const MOBILITY_VALUES_EG: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 5];
 pub const WINDOW: i32 = 33; // Search window for aspiration
-
+// A simple pawn transposition table using a hash map.
+// Key: zobrist hash of pawn structure, Value: evaluation score (i32)
 pub struct SearchInfo {
     pub killer_moves: [[util::Move; 2]; 64], // Two killer moves per depth
     pub nodes: u64,
@@ -50,7 +52,6 @@ impl SearchInfo {
 }
 fn main() {
     use std::io::{self, Write, BufRead};
-
     let stdin = io::stdin();
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     board.zobrist_hash = zobrist::zobrist_hash(&board);
@@ -62,6 +63,7 @@ fn main() {
     let mut opp_time: u64 = 0;     // Opponent's remaining time in ms
     let mut opp_inc: u64 = 0;      // Opponent's increment in ms
     let mut mate_eval = 99900; // Evaluation to find checkmates, can be adjusted
+    let mut pawn_tt = table::PawnTable::new(); // Initialize pawn transposition table
 
     println!("id name ByteChess");
     println!("id author H&LM");
@@ -167,7 +169,7 @@ fn main() {
                 // Record the start time before move calculation
                 let start = std::time::Instant::now();
                 let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
-                let m = think(&mut board, think_time, start, &mut tt, &mut mate_eval, &mut search_info);
+                let m = think(&mut board, think_time, start, &mut tt, &mut mate_eval, &mut search_info, &mut pawn_tt);
                 // After move selection, update the bot's time
                 let elapsed = start.elapsed().as_millis() as u64;
                 my_time = my_time.saturating_sub(elapsed).saturating_add(my_inc);
@@ -182,7 +184,7 @@ fn main() {
         io::stdout().flush().unwrap();
     }
 }
-fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, mate_eval: &mut i32, search_info: &mut SearchInfo) -> util::Move {
+fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, mate_eval: &mut i32, search_info: &mut SearchInfo, pawn_tt: &mut PawnTable) -> util::Move {
     // Thinking logic
     tt.next_age();
     search_info.next_move();
@@ -194,7 +196,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     if moves.len() == 1 { // If there's only one possible move, return it immediately
         return best_move;
     }
-    let eg = board.get_phase() > 0.8;
+    let eg = board.is_pawn_endgame();
     let mut previous_best_move = best_move.clone();
     let mut prev_eval = 0;
     let mut pv = Vec::new();
@@ -211,10 +213,10 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         {
             board::make_move(board,&m);
             let mut child_pv = Vec::new();
-            let mut eval = -minimax(board, depth, 0, -prev_eval-WINDOW, -prev_eval+WINDOW, think_time, timer, tt, &mut child_pv, search_info, eg);
+            let mut eval = -minimax(board, depth, 0, -prev_eval-WINDOW, -prev_eval+WINDOW, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
             if eval <= prev_eval - WINDOW || eval >= prev_eval + WINDOW {
                 // If the evaluation is outside the window, we need to re-search with a wider window
-                eval = -minimax(board, depth, 0, alpha, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg);
+                eval = -minimax(board, depth, 0, alpha, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
             }
             /*println!(
             "info move_ {} depth {} val {} nodes {}",
@@ -261,7 +263,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     }
     best_move
 }
-fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, pv: &mut Vec<util::Move>, search_info: &mut SearchInfo, eg: bool) -> i32 {
+fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, pv: &mut Vec<util::Move>, search_info: &mut SearchInfo, eg: bool, pawn_tt: &mut PawnTable) -> i32 {
     search_info.nodes += 1;
     let r = 3; // Reduction factor
     if board.is_draw() {
@@ -295,14 +297,14 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         ); 2]};
     if depth == 0 {
             pv.clear();
-            return minimax_captures(board, depth_searched, alpha, beta, depth_searched, search_info);
+            return minimax_captures(board, depth_searched, alpha, beta, depth_searched, search_info, pawn_tt);
     }
     let is_check = board::is_check(board);
     if !eg && depth >= r && !is_check { //null move conditions met
         // Perform null move pruning
         board::make_null_move(board);
         let mut null_pv = Vec::new();
-        let eval = -minimax(board, depth - r, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut null_pv, search_info, eg);
+        let eval = -minimax(board, depth - r, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut null_pv, search_info, eg, pawn_tt);
         board::undo_null_move(board);
         if eval >= beta {
             tt.store(TTEntry {
@@ -334,7 +336,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             let mut child_pv = Vec::new();
             let mut eval;
             // late move reduction not applied to hash move
-            eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg);
+            eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
             if timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
                 pv.clear();
@@ -366,7 +368,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 best_pv.clear();
                 best_pv.push(m);
                 best_pv.extend(child_pv);
-            }
+            } 
         }
         board::undo_move(board);
     }
@@ -386,14 +388,14 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             if depth >= 3 && m_index >= 4 
             {
                 // Reduce the depth for later moves
-                eval = -minimax(board, depth - 2, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg);
+                eval = -minimax(board, depth - 2, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
                 if eval > alpha { // a promising move, so search deeper
-                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg);
+                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
                 }
 
             } else {
                 // Normal search depth
-                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg);
+                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
             }
             if timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
@@ -452,9 +454,9 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     alpha
 }
 // to_do -> include checks to make eval a truly quiet position
-fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, search_info: &mut SearchInfo) -> i32 {
+fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, search_info: &mut SearchInfo, pawn_tt: &mut PawnTable) -> i32 {
     search_info.nodes += 1;
-    let eval = util::evaluate(board);
+    let eval = util::evaluate(board, pawn_tt);
     if eval >= beta {
         return beta;
     } else if eval >= alpha {
@@ -469,7 +471,7 @@ fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i3
     {
         for m in moves.iter(){
             board::make_move(board, &m);
-            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, search_info);
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, search_info, pawn_tt);
             if eval >= beta {
                 board::undo_move(board);
                 return beta; // Beta cut-off

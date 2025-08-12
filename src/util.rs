@@ -1,5 +1,7 @@
 use crate::board::BBPiece;
 use crate::board::Board;
+use crate::table::PawnEntry;
+use crate::table::PawnTable;
 use crate::{board, PIECE_VALUES, PIECE_VALUES_EG, MOBILITY_VALUES, MOBILITY_VALUES_EG};
 const DOUBLED_PAWN_PENALTY: i32 = 1;
 const ISOLATED_PAWN_PENALTY: i32 = 5;
@@ -393,26 +395,32 @@ pub fn board_from_fen(fen: &str) -> board::Board {
 
     // Piece placement
     let mut sq = 56; // Start at a8
+    let mut material_score = 0;
     for c in parts[0].chars() {
         match c {
             '/' => sq -= 16,
             '1'..='8' => sq += c.to_digit(10).unwrap() as usize,
-            'P' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
-            'N' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
-            'B' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
-            'R' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
-            'Q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
-            'K' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; }
-            'p' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
-            'n' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
-            'b' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
-            'r' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
-            'q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
-            'k' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; }
+            'P' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Pawn as usize]; }
+            'N' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Knight as usize];}
+            'B' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Bishop as usize];}
+            'R' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Rook as usize];}
+            'Q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Queen as usize];}
+            'K' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::King as usize];}
+            'p' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Pawn as usize];}
+            'n' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Knight as usize];}
+            'b' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Bishop as usize];}
+            'r' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Rook as usize];}
+            'q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Queen as usize];}
+            'k' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::King as usize];}
             _ => {}
         }
     }
-
+    let mut phase_count = 0;
+    phase_count += bitboards[BBPiece::Knight as usize].count_ones() * 1;
+    phase_count += bitboards[BBPiece::Bishop as usize].count_ones() * 1;
+    phase_count += bitboards[BBPiece::Rook as usize].count_ones() * 2;
+    phase_count += bitboards[BBPiece::Queen as usize].count_ones() * 4;
+    let phase = phase_count as u8; 
     // Active color
     move_color = match parts[1] {
         "w" => 1,
@@ -449,11 +457,15 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         halfmove_clock,
         fullmove_number,
         zobrist_hash: 0u64, //generated AFTER making a board
+        pawn_hash: 0u64, //generated AFTER making a board
         moves: MoveStack::new(),
         state_history: Vec::new(),
         move_history: Vec::new(),
         captures_history: Vec::new(),
         position_history: Vec::new(),
+        pawn_position_history: Vec::new(),
+        phase,
+        material_score,
     }
 }
 // Print function for Board
@@ -566,19 +578,27 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
     *bb &= !(1 << low_bit);
     low_bit
 }
-pub fn evaluate(board: &board::Board) -> i32 {
-    let phase = board.get_phase();
-    let material_score = material_score(board, phase);
+pub fn evaluate(board: &board::Board, pawn_tt: &mut PawnTable) -> i32 {
+    let phase = (board.phase as f32 / 24.0).min(1.0f32); // Normalize phase to [0, 1]
+    let material_score = board.material_score;
     let mobility_score = mobility_score(board, phase);
-    let king_safety_score = ((1.0 - phase) * king_safety_score(board) as f32).round() as i32;
-    let king_edge_score = (phase * king_edge(board) as f32).round() as i32;
-    let pawn_structure_score = pawn_struct_score(board);
-    return (material_score + mobility_score + king_safety_score + pawn_structure_score) * board.move_color as i32;
+    let king_safety_score = (phase * king_safety_score(board) as f32).round() as i32;
+    let king_edge_score = ((1.0-phase) * king_edge(board) as f32).round() as i32;
+    let mut pawn_structure_score = 0;
+    if let Some(tt) = pawn_tt.probe(board.pawn_hash) {
+        pawn_structure_score = tt.score;
+    } else {
+        pawn_structure_score = pawn_struct_score(board);
+        pawn_tt.store(PawnEntry {
+            zobrist: board.pawn_hash,
+            score: pawn_structure_score,
+        });
+    }
+    return (material_score + mobility_score + king_safety_score + king_edge_score + pawn_structure_score) * board.move_color as i32;
 }
 pub fn king_edge(board: &board::Board) -> i32 {
     let white_distance = king_distance_to_corner(board, true);
     let black_distance = king_distance_to_corner(board, false);
-    
     // Return difference (closer to corner = higher penalty)
     (white_distance - black_distance) * 20
 }
@@ -617,31 +637,19 @@ fn king_distance_to_corner(board: &board::Board, is_white: bool) -> i32 {
     min_distance
 }
 pub fn print_eval(board: &board::Board) {
-    let phase = board.get_phase();
-    let material_score = material_score(board, phase);
+    let phase = (board.phase as f32 / 24.0).min(1.0f32); // Normalize phase to [0, 1]
+    let material_score = board.material_score;
     let mobility_score = mobility_score(board, phase);
-    let king_safety_score = king_safety_score(board);
-    let pawn_structure_score = pawn_struct_score(board);
+    let king_safety_score = (phase * king_safety_score(board) as f32).round() as i32;
+    let king_edge_score = ((1.0-phase) * king_edge(board) as f32).round() as i32;
+    let mut pawn_structure_score = pawn_struct_score(board);
+    println!("Phase {}", board.phase);
     println!("Material Score: {}", material_score* board.move_color as i32);
     println!("Mobility Score: {}", mobility_score* board.move_color as i32);
     println!("Pawn Structure Score: {}", pawn_structure_score * board.move_color as i32);
     println!("King Safety Score: {}", king_safety_score * board.move_color as i32);
-    println!("Total Evaluation: {}", (material_score + mobility_score + king_safety_score + pawn_structure_score)* board.move_color as i32);
-}
-fn material_score(board: &board::Board, phase: f32) -> i32 {
-    let mut score = 0;
-    
-    // More efficient: iterate through piece types directly
-    for piece_type in [BBPiece::Pawn, BBPiece::Knight, BBPiece::Bishop, BBPiece::Rook, BBPiece::Queen, BBPiece::King] {
-        let piece_value;
-        piece_value = ((phase * PIECE_VALUES_EG[piece_type as usize] as f32) + ((1.0 - phase) * PIECE_VALUES[piece_type as usize] as f32)).round() as i32;
-        let white_pieces = board.combined([piece_type, BBPiece::White], true);
-        let black_pieces = board.combined([piece_type, BBPiece::Black], true);
-        let white_count = white_pieces.count_ones() as i32;
-        let black_count = black_pieces.count_ones() as i32;
-        score += piece_value * (white_count - black_count);
-    }
-    score
+    println!("King Edge Score: {}", king_edge_score * board.move_color as i32);
+    println!("Total Evaluation: {}", (material_score + mobility_score + king_safety_score + king_edge_score + pawn_structure_score)* board.move_color as i32);
 }
 
 fn mobility_score(board: &board::Board, phase: f32) -> i32 {
@@ -658,58 +666,6 @@ fn pawn_struct_score(board: &board::Board) -> i32 {
     let white_pawns = board.combined([BBPiece::Pawn, BBPiece::White], true);
     let black_pawns = board.combined([BBPiece::Pawn, BBPiece::Black], true);
     pawn_evaluation(white_pawns, true) - pawn_evaluation(black_pawns, false)
-}
-fn eg_pawn_score(board: &board::Board) -> i32 {
-    let white_pawns = board.combined([BBPiece::Pawn, BBPiece::White], true);
-    let black_pawns = board.combined([BBPiece::Pawn, BBPiece::Black], true);
-    eg_pawn_evaluation(white_pawns, true) - eg_pawn_evaluation(black_pawns, false)
-}
-fn eg_pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
-    if pawn_bb == 0 {
-        return 0;
-    }
-    
-    let mut score = 0;
-    let mut pawns_per_file = [0u8; 8];
-    let mut bitboard = pawn_bb;
-    
-    // First pass: count pawns per file and add advancement bonuses
-    while bitboard != 0 {
-        let square = bb_gs_low_bit(&mut bitboard);
-        let rank = (square / 8) as u8;
-        let file = (square % 8) as usize;
-        
-        pawns_per_file[file] += 1;
-        
-        // Pawn advancement bonus =
-        let advancement = if is_white {
-            2_i32.pow((rank as u32).saturating_sub(1))
-        } else {
-            2_i32.pow((6u32).saturating_sub(rank as u32))
-        };
-        score += PAWN_ADVANCE_BONUS * 3 * (advancement as i32);
-    }
-    
-    // Second pass: evaluate pawn structure
-    for file in 0..8 {
-        let pawn_count = pawns_per_file[file];
-        if pawn_count == 0 {
-            continue;
-        }
-        
-        // Doubled/tripled pawn penalty (exponential)
-        if pawn_count > 1 {
-            score -= DOUBLED_PAWN_PENALTY * 3 *  (pawn_count as i32 - 1) * (pawn_count as i32 - 1);
-        }
-        
-        // Isolated pawn penalty
-        let has_support = (file > 0 && pawns_per_file[file - 1] > 0) || 
-                         (file < 7 && pawns_per_file[file + 1] > 0);
-        if !has_support {
-            score -= ISOLATED_PAWN_PENALTY;
-        }
-    }
-    score
 }
 fn pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
     if pawn_bb == 0 {
@@ -791,7 +747,7 @@ pub fn king_safety_score(board: &board::Board) -> i32 {
 fn evaluate_king_safety(board: &board::Board, is_white: bool) -> i32 {
     let king_color = if is_white { BBPiece::White } else { BBPiece::Black };
     let enemy_color = if is_white { BBPiece::Black } else { BBPiece::White };
-    
+    let blockers = board.combined([BBPiece::White, BBPiece::Black], false);
     // Find king position
     let king_bb = board.bitboards[BBPiece::King as usize] & board.bitboards[king_color as usize];
     if king_bb == 0 {
@@ -814,7 +770,7 @@ fn evaluate_king_safety(board: &board::Board, is_white: bool) -> i32 {
         
         while piece_bb != 0 {
             let piece_square = bb_gs_low_bit(&mut piece_bb);
-            let attacks = board.get_piece_attacks(piece_type, piece_square);
+            let attacks = board.get_piece_attacks(piece_type, piece_square, blockers);
             
             if attacks & king_zone != 0 {
                 attackers += 1;
