@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::util::Move;
+use crate::util::{Move, Score};
 
 // The type of bound stored in the table
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -22,7 +22,7 @@ pub struct TTEntry {
 #[derive(Copy, Clone)]
 pub struct PawnEntry {
     pub zobrist: u64,      // Zobrist hash of the position
-    pub score: i32,        // Score 
+    pub score: Score,        // Score 
 }
 // The transposition table itself
 pub struct TranspositionTable {
@@ -37,7 +37,7 @@ pub struct PawnTable {
 
 impl PawnTable {
     pub fn new() -> Self {
-        let size = 1 << 22; // 4M entries
+        let size = 1 << 20; // 1M entries
         Self {
             table: vec![None; size],
             mask: size - 1,

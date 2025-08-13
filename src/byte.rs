@@ -9,15 +9,14 @@ use std::io::Write;
 use crate::magic::ROOK_MAGICS;
 use crate::table::PawnTable;
 use crate::table::{TranspositionTable, TTEntry, Bound};
+use util::Score;
 mod board;
 mod util;
 mod magic;
 mod zobrist;
 mod table;
-pub const PIECE_VALUES: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
-pub const PIECE_VALUES_EG: [i32; 8] = [0, 0, 71, 293, 300, 456, 905, 100000];
-pub const MOBILITY_VALUES: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 2];
-pub const MOBILITY_VALUES_EG: [i32; 8] = [0, 0, 0, 10, 10, 3, 2, 5];
+pub const PIECE_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(71,71), Score::new(293,293), Score::new(300,300), Score::new(456,456), Score::new(905,905), Score::new(100000,100000)];
+pub const MOBILITY_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(0,0), Score::new(10,10), Score::new(10,10), Score::new(3,3), Score::new(2,2), Score::new(2,5)];
 pub const WINDOW: i32 = 33; // Search window for aspiration
 // A simple pawn transposition table using a hash map.
 // Key: zobrist hash of pawn structure, Value: evaluation score (i32)
@@ -337,7 +336,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             let mut eval;
             // late move reduction not applied to hash move
             eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
-            if timer.elapsed().as_millis() > think_time as u128 {
+            if (search_info.nodes & 0x3FF) == 0 && timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
                 pv.clear();
                 pv.extend(best_pv.iter());
@@ -397,7 +396,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 // Normal search depth
                 eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
             }
-            if timer.elapsed().as_millis() > think_time as u128 {
+            if (search_info.nodes & 0x3FF) == 0 && timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
                 pv.clear();
                 pv.extend(best_pv.iter());

@@ -1,12 +1,26 @@
 use crate::board::BBPiece;
 use crate::board::Board;
+use crate::board::{TOTAL_PHASE, KNIGHT_PHASE, BISHOP_PHASE, ROOK_PHASE, QUEEN_PHASE};
 use crate::table::PawnEntry;
 use crate::table::PawnTable;
-use crate::{board, PIECE_VALUES, PIECE_VALUES_EG, MOBILITY_VALUES, MOBILITY_VALUES_EG};
-const DOUBLED_PAWN_PENALTY: i32 = 1;
-const ISOLATED_PAWN_PENALTY: i32 = 5;
-const PAWN_ADVANCE_BONUS: i32 = 3;
-const PAWN_ISLAND_PENALTY: i32 = 2;
+use crate::{board, PIECE_VALUES, MOBILITY_VALUES};
+const DOUBLED_PAWN_PENALTY: Score = Score::new(1,1);
+const ISOLATED_PAWN_PENALTY: Score = Score::new(5,5);
+const PAWN_ADVANCE_BONUS: Score = Score::new(3,3);
+const PAWN_ISLAND_PENALTY: Score = Score::new(2,2);
+const PASSED_PAWN_BASE: Score = Score::new(20,20);
+const PASSED_PAWN_RANK_BONUS: [Score; 8] = [
+    Score::new(0, 0),      // rank 0
+    Score::new(5, 5),      // rank 1  
+    Score::new(10, 10),     // rank 2
+    Score::new(20, 20),    // rank 3
+    Score::new(35, 35),    // rank 4
+    Score::new(60, 60),    // rank 5
+    Score::new(100, 100),   // rank 6
+    Score::new(0, 0),      // rank 7
+];// const BLOCKED_PASSED_PAWN_PENALTY: i32 = 15; to be implemented
+const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(10,10);
+// const KING_PROXIMITY_TO_PASSED_PAWN: i32 = 5; // Per square closer to be implemented
 // King safety constants
 const KING_SAFETY_TABLE: [i32; 100] = [
     0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
@@ -194,10 +208,10 @@ impl MoveStack {
     {
         self.sort_by(|a, b| {
             let value_a = captured_piece(a)
-                .map(|piece| PIECE_VALUES[piece as usize])
+                .map(|piece| PIECE_VALUES[piece as usize].taper(0))
                 .unwrap_or(0);
             let value_b = captured_piece(b)
-                .map(|piece| PIECE_VALUES[piece as usize])
+                .map(|piece| PIECE_VALUES[piece as usize].taper(0))
                 .unwrap_or(0);
             value_b.cmp(&value_a)
         });
@@ -288,8 +302,8 @@ impl Move {
         // 2. Winning captures (MVV-LVA: Most Valuable Victim - Least Valuable Attacker)
         if m.flags() & MoveFlag::Capture as u8 != 0 {
             if let Some(captured) = captured_piece && let Some(attacker) = attacking_piece {
-                let victim_value = PIECE_VALUES[captured as usize];
-                let attacker_value = PIECE_VALUES[attacker as usize];
+                let victim_value = PIECE_VALUES[captured as usize].taper(0);
+                let attacker_value = PIECE_VALUES[attacker as usize].taper(0);
                 
                 // MVV-LVA scoring
                 score += 10000 + victim_value * 10 - attacker_value;
@@ -395,7 +409,7 @@ pub fn board_from_fen(fen: &str) -> board::Board {
 
     // Piece placement
     let mut sq = 56; // Start at a8
-    let mut material_score = 0;
+    let mut material_score = Score::new(0,0);
     for c in parts[0].chars() {
         match c {
             '/' => sq -= 16,
@@ -415,12 +429,12 @@ pub fn board_from_fen(fen: &str) -> board::Board {
             _ => {}
         }
     }
-    let mut phase_count = 0;
-    phase_count += bitboards[BBPiece::Knight as usize].count_ones() * 1;
-    phase_count += bitboards[BBPiece::Bishop as usize].count_ones() * 1;
-    phase_count += bitboards[BBPiece::Rook as usize].count_ones() * 2;
-    phase_count += bitboards[BBPiece::Queen as usize].count_ones() * 4;
-    let phase = phase_count as u8; 
+    let mut phase_count = TOTAL_PHASE;
+    phase_count -= bitboards[BBPiece::Knight as usize].count_ones() * KNIGHT_PHASE;
+    phase_count -= bitboards[BBPiece::Bishop as usize].count_ones() * BISHOP_PHASE;
+    phase_count -= bitboards[BBPiece::Rook as usize].count_ones() * ROOK_PHASE;
+    phase_count -= bitboards[BBPiece::Queen as usize].count_ones() * QUEEN_PHASE;
+    let phase = ((phase_count * 255 + TOTAL_PHASE/2)/TOTAL_PHASE) as u8; 
     // Active color
     move_color = match parts[1] {
         "w" => 1,
@@ -465,6 +479,7 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         position_history: Vec::new(),
         pawn_position_history: Vec::new(),
         phase,
+        phase_count,
         material_score,
     }
 }
@@ -578,25 +593,98 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
     *bb &= !(1 << low_bit);
     low_bit
 }
+// Score struct that holds both middlegame and endgame values
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Score {
+    mg: i32,  // middlegame
+    eg: i32,  // endgame
+}
+
+impl Score {
+    pub const fn new(mg: i32, eg: i32) -> Self {
+        Score { mg, eg }
+    }
+    
+    pub const fn from_single(value: i32) -> Self {
+        Score { mg: value, eg: value }
+    }
+    
+    // Taper the score based on game phase (0-255 scale)
+    #[inline(always)]
+    pub fn taper(&self, phase: u8) -> i32 {
+        // phase: 255 = opening/middlegame, 0 = endgame
+        // Linear interpolation with rounding
+        ((self.mg * (255 - phase) as i32 + self.eg * phase as i32)) / 255
+    }
+}
+impl std::ops::Add for Score {
+    type Output = Score;
+    #[inline(always)]
+    fn add(self, rhs: Score) -> Score {
+        Score { mg: self.mg + rhs.mg, eg: self.eg + rhs.eg }
+    }
+}
+
+impl std::ops::AddAssign for Score {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: Score) {
+        self.mg += rhs.mg;
+        self.eg += rhs.eg;
+    }
+}
+
+impl std::ops::Sub for Score {
+    type Output = Score;
+    #[inline(always)]
+    fn sub(self, rhs: Score) -> Score {
+        Score { mg: self.mg - rhs.mg, eg: self.eg - rhs.eg }
+    }
+}
+
+impl std::ops::SubAssign for Score {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: Score) {
+        self.mg -= rhs.mg;
+        self.eg -= rhs.eg;
+    }
+}
+
+impl std::ops::Mul<i32> for Score {
+    type Output = Score;
+    #[inline(always)]
+    fn mul(self, rhs: i32) -> Score {
+        Score { mg: self.mg * rhs, eg: self.eg * rhs }
+    }
+}
+
+impl std::ops::Neg for Score {
+    type Output = Score;
+    #[inline(always)]
+    fn neg(self) -> Score {
+        Score { mg: -self.mg, eg: -self.eg }
+    }
+}
+
 pub fn evaluate(board: &board::Board, pawn_tt: &mut PawnTable) -> i32 {
-    let phase = (board.phase as f32 / 24.0).min(1.0f32); // Normalize phase to [0, 1]
+    let phase = board.phase;
     let material_score = board.material_score;
-    let mobility_score = mobility_score(board, phase);
-    let king_safety_score = (phase * king_safety_score(board) as f32).round() as i32;
-    let king_edge_score = ((1.0-phase) * king_edge(board) as f32).round() as i32;
-    let mut pawn_structure_score = 0;
+    let mobility_score = board.mobility_score();
+    let king_safety_score = Score::new(king_safety_score(board),0);
+    let king_edge_score = Score::new(0,king_edge(board));
+    let pawn_structure_score;
     if let Some(tt) = pawn_tt.probe(board.pawn_hash) {
         pawn_structure_score = tt.score;
     } else {
-        pawn_structure_score = pawn_struct_score(board);
+        let pawn_structure = pawn_struct_score(board);
         pawn_tt.store(PawnEntry {
             zobrist: board.pawn_hash,
-            score: pawn_structure_score,
+            score: pawn_structure,
         });
+        pawn_structure_score = pawn_structure;
     }
-    return (material_score + mobility_score + king_safety_score + king_edge_score + pawn_structure_score) * board.move_color as i32;
+    return (material_score + mobility_score + king_safety_score + king_edge_score + pawn_structure_score).taper(phase) * board.move_color as i32;
 }
-pub fn king_edge(board: &board::Board) -> i32 {
+fn king_edge(board: &board::Board) -> i32 {
     let white_distance = king_distance_to_corner(board, true);
     let black_distance = king_distance_to_corner(board, false);
     // Return difference (closer to corner = higher penalty)
@@ -637,12 +725,12 @@ fn king_distance_to_corner(board: &board::Board, is_white: bool) -> i32 {
     min_distance
 }
 pub fn print_eval(board: &board::Board) {
-    let phase = (board.phase as f32 / 24.0).min(1.0f32); // Normalize phase to [0, 1]
-    let material_score = board.material_score;
-    let mobility_score = mobility_score(board, phase);
-    let king_safety_score = (phase * king_safety_score(board) as f32).round() as i32;
-    let king_edge_score = ((1.0-phase) * king_edge(board) as f32).round() as i32;
-    let mut pawn_structure_score = pawn_struct_score(board);
+    let phase = board.phase;
+    let material_score = board.material_score.taper(phase);
+    let mobility_score = board.mobility_score().taper(phase);
+    let king_safety_score = ((255-phase as i32) * king_safety_score(board)) / 255;
+    let king_edge_score = (phase as i32 * king_edge(board)) / 255;
+    let mut pawn_structure_score = pawn_struct_score(board).taper(phase);
     println!("Phase {}", board.phase);
     println!("Material Score: {}", material_score* board.move_color as i32);
     println!("Mobility Score: {}", mobility_score* board.move_color as i32);
@@ -652,28 +740,19 @@ pub fn print_eval(board: &board::Board) {
     println!("Total Evaluation: {}", (material_score + mobility_score + king_safety_score + king_edge_score + pawn_structure_score)* board.move_color as i32);
 }
 
-fn mobility_score(board: &board::Board, phase: f32) -> i32 {
-    let mut score = 0;
-    let (w_attacks, b_attacks) = board.compute_mobility(phase);
-    for i in 3..7 {
-        let white_mobility = w_attacks[i] as i32;
-        let black_mobility = b_attacks[i] as i32;
-        score += white_mobility - black_mobility;
-    }
-    score
-}
-fn pawn_struct_score(board: &board::Board) -> i32 {
+fn pawn_struct_score(board: &board::Board) -> Score {
     let white_pawns = board.combined([BBPiece::Pawn, BBPiece::White], true);
     let black_pawns = board.combined([BBPiece::Pawn, BBPiece::Black], true);
-    pawn_evaluation(white_pawns, true) - pawn_evaluation(black_pawns, false)
+    pawn_evaluation(board, white_pawns, black_pawns, true) - pawn_evaluation(board, black_pawns, white_pawns, false)
 }
-fn pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
+fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bool) -> Score {
     if pawn_bb == 0 {
-        return 0;
+        return Score::new(0,0);
     }
     
-    let mut score = 0;
+    let mut score = Score::new(0,0);
     let mut pawns_per_file = [0u8; 8];
+    let mut pawn_positions = Vec::new();
     let mut bitboard = pawn_bb;
     
     // First pass: count pawns per file and add advancement bonuses
@@ -683,7 +762,8 @@ fn pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
         let file = (square % 8) as usize;
         
         pawns_per_file[file] += 1;
-        
+        pawn_positions.push((square, rank, file));
+
         // Pawn advancement bonus =
         let advancement = if is_white {
             2_i32.pow((rank as u32).saturating_sub(1))
@@ -694,6 +774,19 @@ fn pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
     }
     
     // Second pass: evaluate pawn structure
+    for &(square, rank, file) in &pawn_positions {
+        if is_passed_pawn(square, is_white, opp_bb) {
+            let passed_pawn_score = evaluate_passed_pawn(
+                square, 
+                rank, 
+                file, 
+                is_white, 
+                pawn_bb,
+            );
+            score += passed_pawn_score;
+        }
+    }
+
     for file in 0..8 {
         let pawn_count = pawns_per_file[file];
         if pawn_count == 0 {
@@ -721,7 +814,95 @@ fn pawn_evaluation(pawn_bb: u64, is_white: bool) -> i32 {
     
     score
 }
-
+fn is_passed_pawn(square: usize, is_white: bool, enemy_pawns: u64) -> bool {
+    let file = square % 8;
+    let rank = square / 8;
+    
+    // Generate mask for squares that would block this pawn
+    let mut blocking_mask = 0u64;
+    
+    if is_white {
+        // For white pawns, check ranks ahead (higher ranks)
+        for check_rank in (rank + 1)..8 {
+            // Same file
+            blocking_mask |= 1u64 << (check_rank * 8 + file);
+            // Adjacent files
+            if file > 0 {
+                blocking_mask |= 1u64 << (check_rank * 8 + file - 1);
+            }
+            if file < 7 {
+                blocking_mask |= 1u64 << (check_rank * 8 + file + 1);
+            }
+        }
+    } else {
+        // For black pawns, check ranks ahead (lower ranks)
+        for check_rank in 0..rank {
+            // Same file
+            blocking_mask |= 1u64 << (check_rank * 8 + file);
+            // Adjacent files
+            if file > 0 {
+                blocking_mask |= 1u64 << (check_rank * 8 + file - 1);
+            }
+            if file < 7 {
+                blocking_mask |= 1u64 << (check_rank * 8 + file + 1);
+            }
+        }
+    }
+    
+    // If no enemy pawns can stop this pawn, it's passed
+    (enemy_pawns & blocking_mask) == 0
+}
+fn evaluate_passed_pawn(
+    square: usize,
+    rank: u8, 
+    file: usize,
+    is_white: bool,
+    own_pawns: u64,
+) -> Score {
+    let mut score = PASSED_PAWN_BASE;
+    
+    // Rank bonus - more advanced = more valuable
+    let pawn_rank = if is_white { rank } else { 7 - rank };
+    score += PASSED_PAWN_RANK_BONUS[pawn_rank as usize];
+    
+    // Check if pawn is blocked
+    let next_square = if is_white {
+        if rank < 7 { Some((rank + 1) * 8 + file as u8) } else { None }
+    } else {
+        if rank > 0 { Some((rank - 1) * 8 + file as u8) } else { None }
+    };
+    
+    // Check if pawn is protected by own pawn
+    let protection_squares = if is_white {
+        let mut protection = 0u64;
+        if rank > 0 {
+            if file > 0 {
+                protection |= 1u64 << ((rank - 1) * 8 + file as u8 - 1);
+            }
+            if file < 7 {
+                protection |= 1u64 << ((rank - 1) * 8 + file as u8 + 1);
+            }
+        }
+        protection
+    } else {
+        let mut protection = 0u64;
+        if rank < 7 {
+            if file > 0 {
+                protection |= 1u64 << ((rank + 1) * 8 + file as u8 - 1);
+            }
+            if file < 7 {
+                protection |= 1u64 << ((rank + 1) * 8 + file as u8 + 1);
+            }
+        }
+        protection
+    };
+    
+    if (own_pawns & protection_squares) != 0 {
+        score += PROTECTED_PASSED_PAWN_BONUS;
+    }
+    
+    score
+}
 fn count_pawn_islands(pawns_per_file: &[u8; 8]) -> u8 {
     let mut islands = 0;
     let mut in_island = false;
@@ -738,7 +919,7 @@ fn count_pawn_islands(pawns_per_file: &[u8; 8]) -> u8 {
     }
     islands
 }
-pub fn king_safety_score(board: &board::Board) -> i32 {
+fn king_safety_score(board: &board::Board) -> i32 {
     let white_score = evaluate_king_safety(board, true);
     let black_score = evaluate_king_safety(board, false);
     white_score - black_score
