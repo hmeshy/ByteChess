@@ -4,10 +4,10 @@ use crate::board::{TOTAL_PHASE, KNIGHT_PHASE, BISHOP_PHASE, ROOK_PHASE, QUEEN_PH
 use crate::table::PawnEntry;
 use crate::table::PawnTable;
 use crate::{board, PIECE_VALUES, MOBILITY_VALUES};
+const KING_CENTER_BONUS: Score = Score::new(0,20);
 const DOUBLED_PAWN_PENALTY: Score = Score::new(1,1);
 const ISOLATED_PAWN_PENALTY: Score = Score::new(5,5);
 const PAWN_ADVANCE_BONUS: Score = Score::new(3,3);
-const PAWN_ISLAND_PENALTY: Score = Score::new(2,2);
 const PASSED_PAWN_BASE: Score = Score::new(20,20);
 const PASSED_PAWN_RANK_BONUS: [Score; 8] = [
     Score::new(0, 0),      // rank 0
@@ -18,9 +18,8 @@ const PASSED_PAWN_RANK_BONUS: [Score; 8] = [
     Score::new(60, 60),    // rank 5
     Score::new(100, 100),   // rank 6
     Score::new(0, 0),      // rank 7
-];// const BLOCKED_PASSED_PAWN_PENALTY: i32 = 15; to be implemented
+];
 const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(10,10);
-// const KING_PROXIMITY_TO_PASSED_PAWN: i32 = 5; // Per square closer to be implemented
 // King safety constants
 const KING_SAFETY_TABLE: [i32; 100] = [
     0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
@@ -34,10 +33,12 @@ const KING_SAFETY_TABLE: [i32; 100] = [
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500
 ];
-
+const TWO_ATTACKER_BONUS: Score = Score::new(3,0); // Bonus for two attackers on the king   
+const MULTIPLE_ATTACKER_BONUS: Score = Score::new(5,0); // Bonus for multiple attackers on the king
 // Attack weights for different piece types
-const ATTACK_WEIGHTS: [i32; 8] = [0, 0, 0, 1, 1, 2, 4, 0]; // Knight, Bishop, Rook, Queen
-
+const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(1,0), Score::new(1,0), Score::new(2,0), Score::new(4,0), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
+const NO_PAWN_SHIELD_PENALTY: Score = Score::new(6,0);
+const FAR_PAWN_PENALTY: Score = Score::new(3,0);
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Color {
@@ -596,8 +597,8 @@ pub(crate) fn bb_gs_low_bit(bb: &mut u64) -> usize {
 // Score struct that holds both middlegame and endgame values
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Score {
-    mg: i32,  // middlegame
-    eg: i32,  // endgame
+    pub mg: i32,  // middlegame
+    pub eg: i32,  // endgame
 }
 
 impl Score {
@@ -656,7 +657,13 @@ impl std::ops::Mul<i32> for Score {
         Score { mg: self.mg * rhs, eg: self.eg * rhs }
     }
 }
-
+impl std::ops::Div<i32> for Score {
+    type Output = Score;
+    #[inline(always)]
+    fn div(self, rhs: i32) -> Score {
+        Score { mg: self.mg / rhs, eg: self.eg / rhs }
+    }
+}
 impl std::ops::Neg for Score {
     type Output = Score;
     #[inline(always)]
@@ -668,9 +675,9 @@ impl std::ops::Neg for Score {
 pub fn evaluate(board: &board::Board, pawn_tt: &mut PawnTable) -> i32 {
     let phase = board.phase;
     let material_score = board.material_score;
-    let mobility_score = board.mobility_score();
-    let king_safety_score = Score::new(king_safety_score(board),0);
-    let king_edge_score = Score::new(0,king_edge(board));
+    let mobility_score = board.mobility_score(); 
+    let king_safety_score = king_safety_score(board);
+    let king_edge_score = king_edge(board);
     let pawn_structure_score;
     if let Some(tt) = pawn_tt.probe(board.pawn_hash) {
         pawn_structure_score = tt.score;
@@ -684,11 +691,11 @@ pub fn evaluate(board: &board::Board, pawn_tt: &mut PawnTable) -> i32 {
     }
     return (material_score + mobility_score + king_safety_score + king_edge_score + pawn_structure_score).taper(phase) * board.move_color as i32;
 }
-fn king_edge(board: &board::Board) -> i32 {
+fn king_edge(board: &board::Board) -> Score {
     let white_distance = king_distance_to_corner(board, true);
     let black_distance = king_distance_to_corner(board, false);
     // Return difference (closer to corner = higher penalty)
-    (white_distance - black_distance) * 20
+    KING_CENTER_BONUS * (white_distance - black_distance)
 }
 
 fn king_distance_to_corner(board: &board::Board, is_white: bool) -> i32 {
@@ -728,8 +735,8 @@ pub fn print_eval(board: &board::Board) {
     let phase = board.phase;
     let material_score = board.material_score.taper(phase);
     let mobility_score = board.mobility_score().taper(phase);
-    let king_safety_score = ((255-phase as i32) * king_safety_score(board)) / 255;
-    let king_edge_score = (phase as i32 * king_edge(board)) / 255;
+    let king_safety_score = king_safety_score(board).taper(phase);
+    let king_edge_score = king_edge(board).taper(phase);
     let mut pawn_structure_score = pawn_struct_score(board).taper(phase);
     println!("Phase {}", board.phase);
     println!("Material Score: {}", material_score* board.move_color as i32);
@@ -805,13 +812,6 @@ fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bo
             score -= ISOLATED_PAWN_PENALTY;
         }
     }
-    
-    // Pawn islands penalty
-    let pawn_islands = count_pawn_islands(&pawns_per_file);
-    if pawn_islands > 1 {
-        score -= PAWN_ISLAND_PENALTY * (pawn_islands as i32 - 1);
-    }
-    
     score
 }
 fn is_passed_pawn(square: usize, is_white: bool, enemy_pawns: u64) -> bool {
@@ -903,42 +903,26 @@ fn evaluate_passed_pawn(
     
     score
 }
-fn count_pawn_islands(pawns_per_file: &[u8; 8]) -> u8 {
-    let mut islands = 0;
-    let mut in_island = false;
-    
-    for &pawn_count in pawns_per_file {
-        if pawn_count > 0 {
-            if !in_island {
-                islands += 1;
-                in_island = true;
-            }
-        } else {
-            in_island = false;
-        }
-    }
-    islands
-}
-fn king_safety_score(board: &board::Board) -> i32 {
+fn king_safety_score(board: &board::Board) -> Score {
     let white_score = evaluate_king_safety(board, true);
     let black_score = evaluate_king_safety(board, false);
     white_score - black_score
 }
 
-fn evaluate_king_safety(board: &board::Board, is_white: bool) -> i32 {
+fn evaluate_king_safety(board: &board::Board, is_white: bool) -> Score {
     let king_color = if is_white { BBPiece::White } else { BBPiece::Black };
     let enemy_color = if is_white { BBPiece::Black } else { BBPiece::White };
     let blockers = board.combined([BBPiece::White, BBPiece::Black], false);
     // Find king position
     let king_bb = board.bitboards[BBPiece::King as usize] & board.bitboards[king_color as usize];
     if king_bb == 0 {
-        return 0; // No king (shouldn't happen)
+        return Score::new(0,0); // No king (shouldn't happen)
     }
     
     let mut king_bb_copy = king_bb;
     let king_square = bb_gs_low_bit(&mut king_bb_copy);
     
-    let mut attack_units = 0;
+    let mut attack_units = Score::new(0,0);
     let mut attackers = 0;
     
     // Get king zone (king + surrounding squares)
@@ -963,10 +947,10 @@ fn evaluate_king_safety(board: &board::Board, is_white: bool) -> i32 {
     
     // Bonus for multiple attackers
     if attackers >= 2 {
-        attack_units += 3;
+        attack_units += TWO_ATTACKER_BONUS;
     }
     if attackers >= 3 {
-        attack_units += 5 * (attackers - 2); // More attackers, more bonus;
+        attack_units += MULTIPLE_ATTACKER_BONUS * (attackers - 1); // More attackers, more bonus;
     }
     
     // Pawn shelter bonus/penalty
@@ -974,8 +958,7 @@ fn evaluate_king_safety(board: &board::Board, is_white: bool) -> i32 {
     attack_units += shelter_penalty;
     
     // Convert attack units to score using safety table
-    let index = std::cmp::min(attack_units as usize, 99);
-    -KING_SAFETY_TABLE[index] // Negative because this is penalty for our king
+    Score::new(-KING_SAFETY_TABLE[std::cmp::min(attack_units.mg as usize, 99)], -KING_SAFETY_TABLE[std::cmp::min(attack_units.eg as usize, 99)]) // Negative because this is penalty for our king
 }
 
 fn get_king_zone(king_square: usize) -> u64 {
@@ -984,13 +967,10 @@ fn get_king_zone(king_square: usize) -> u64 {
     zone
 }
 
-fn evaluate_pawn_shelter(board: &board::Board, king_square: usize, is_white: bool) -> i32 {
+fn evaluate_pawn_shelter(board: &board::Board, king_square: usize, is_white: bool) -> Score {
     let king_file = king_square % 8;
     let king_rank = king_square / 8;
-    let mut penalty = 0;
-    if king_file >= 3 && king_file <= 5 { // on d,e,f files / not castled
-        penalty += 3; 
-    }
+    let mut penalty = Score::new(0,0);
     let own_pawns = if is_white {
         board.combined([BBPiece::Pawn, BBPiece::White], true)
     } else {
@@ -1022,9 +1002,9 @@ fn evaluate_pawn_shelter(board: &board::Board, king_square: usize, is_white: boo
         }
         
         if !has_pawn {
-            penalty += 6; // No pawn shield on this file
+            penalty += NO_PAWN_SHIELD_PENALTY; // No pawn shield on this file
         } else if closest_pawn_distance > 2 {
-            penalty += 3 * (closest_pawn_distance - 2); // Pawn too far away
+            penalty += FAR_PAWN_PENALTY * (closest_pawn_distance - 2); // Pawn too far away
         }
     }
     penalty

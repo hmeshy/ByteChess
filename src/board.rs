@@ -1285,7 +1285,7 @@ impl Board {
     
     // Single function that generates attacks once and counts mobility
     #[inline(always)]
-    fn get_mobility_count(&self, piece_type: usize, square: usize, blockers: u64, own_pieces: u64) -> u32 {
+    pub fn get_mobility_count(&self, piece_type: usize, square: usize, blockers: u64, own_pieces: u64) -> u32 {
         let attacks = match piece_type {
             3 => KNIGHT_ATTACKS[square], // Knight - no blockers needed
             4 => bishop_attacks(square, blockers), // Bishop

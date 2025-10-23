@@ -15,8 +15,10 @@ mod util;
 mod magic;
 mod zobrist;
 mod table;
-pub const PIECE_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(71,71), Score::new(293,293), Score::new(300,300), Score::new(456,456), Score::new(905,905), Score::new(100000,100000)];
-pub const MOBILITY_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(0,0), Score::new(10,10), Score::new(10,10), Score::new(3,3), Score::new(2,2), Score::new(2,5)];
+mod tuner;
+mod tunereval;
+pub const PIECE_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(66,90), Score::new(306,321), Score::new(336,293), Score::new(461,613), Score::new(1101,1010), Score::new(100000,100000)];
+pub const MOBILITY_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(0,0), Score::new(10,8), Score::new(10,7), Score::new(3,6), Score::new(2,5), Score::new(2,5)];
 pub const WINDOW: i32 = 33; // Search window for aspiration
 // A simple pawn transposition table using a hash map.
 // Key: zobrist hash of pawn structure, Value: evaluation score (i32)
@@ -51,6 +53,13 @@ impl SearchInfo {
 }
 fn main() {
     use std::io::{self, Write, BufRead};
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 && args[1] == "tune"
+    {
+        println!("Starting Texel-based Tuning...");
+        tuner::main();
+        return;
+    }
     let stdin = io::stdin();
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     board.zobrist_hash = zobrist::zobrist_hash(&board);
