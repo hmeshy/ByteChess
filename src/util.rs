@@ -4,23 +4,26 @@ use crate::board::{TOTAL_PHASE, KNIGHT_PHASE, BISHOP_PHASE, ROOK_PHASE, QUEEN_PH
 use crate::table::PawnEntry;
 use crate::table::PawnTable;
 use crate::{board, PIECE_VALUES, MOBILITY_VALUES};
-const KING_CENTER_BONUS: Score = Score::new(-6, 4);
-const DOUBLED_PAWN_PENALTY: Score = Score::new(17, 17);
-const ISOLATED_PAWN_PENALTY: Score = Score::new(25, 2);
-const PAWN_ADVANCE_BONUS: Score = Score::new(9, -1);
-const PASSED_PAWN_BASE: Score = Score::new(-14, 14);
-// === Passed Pawn Rank Bonuses ===
+const KING_CENTER_BONUS: Score = Score::new(-18,19);
+//const DOUBLED_PAWN_PENALTY: Score = Score::new(1,1);
+//const ISOLATED_PAWN_PENALTY: Score = Score::new(5,5);
+//const PAWN_ADVANCE_BONUS: Score = Score::new(2,2);
+//const PASSED_PAWN_BASE: Score = Score::new(20,20);
+const DOUBLED_PAWN_PENALTY: Score = Score::new(3,24);
+const ISOLATED_PAWN_PENALTY: Score = Score::new(12,16);
+const PAWN_ADVANCE_BONUS: Score = Score::new(2,1);
+const PASSED_PAWN_BASE: Score = Score::new(-19,59);
 const PASSED_PAWN_RANK_BONUS: [Score; 8] = [
-    Score::new(0, 0),
-    Score::new(1, 19), // Rank 2
-    Score::new(-3, 2), // Rank 3
-    Score::new(8, 12), // Rank 4
-    Score::new(23, 28), // Rank 5
-    Score::new(60, 51), // Rank 6
-    Score::new(101, 83), // Rank 7
-    Score::new(0, 0) 
+    Score::new(0, 0),      // rank 0
+    Score::new(-2, -38),      // rank 1  
+    Score::new(-8, -42),     // rank 2
+    Score::new(-3, -18),    // rank 3
+    Score::new(18, 15),    // rank 4
+    Score::new(35, 92),    // rank 5
+    Score::new(19, 155),   // rank 6
+    Score::new(0, 0),      // rank 7
 ];
-const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(2, 13);
+const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(26,-1);
 // King safety constants
 const KING_SAFETY_TABLE: [i32; 100] = [
     0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
@@ -34,12 +37,13 @@ const KING_SAFETY_TABLE: [i32; 100] = [
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500
 ];
-const TWO_ATTACKER_BONUS: Score = Score::new(3,0); // Bonus for two attackers on the king   
-const MULTIPLE_ATTACKER_BONUS: Score = Score::new(5,0); // Bonus for multiple attackers on the king
+const TWO_ATTACKER_BONUS: Score = Score::new(3,1); // Bonus for two attackers on the king  
+const MULTIPLE_ATTACKER_BONUS: Score = Score::new(3,0); // Bonus for multiple attackers on the king
 // Attack weights for different piece types
-const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(1,0), Score::new(1,0), Score::new(2,0), Score::new(4,0), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
-const NO_PAWN_SHIELD_PENALTY: Score = Score::new(6,0);
-const FAR_PAWN_PENALTY: Score = Score::new(3,0);
+const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(3,0), Score::new(5,0), Score::new(3,0), Score::new(4,3), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
+const NO_PAWN_SHIELD_PENALTY: Score = Score::new(8,0);
+const FAR_PAWN_PENALTY: Score = Score::new(2,3);
+
 
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
