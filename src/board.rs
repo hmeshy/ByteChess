@@ -625,7 +625,7 @@ impl Board {
     } else {
         self.material_score -= PIECE_VALUES[piece as usize];
     }
-    self.phase_count += match piece {
+    self.phase_count -= match piece {
         BBPiece::Pawn => 0,
         BBPiece::Knight => KNIGHT_PHASE,
         BBPiece::Bishop => BISHOP_PHASE,
@@ -642,7 +642,7 @@ impl Board {
         } else {
             self.material_score += PIECE_VALUES[piece as usize];
         }
-        self.phase_count -= match piece {
+        self.phase_count += match piece {
         BBPiece::Pawn => 0,
         BBPiece::Knight => KNIGHT_PHASE,
         BBPiece::Bishop => BISHOP_PHASE,

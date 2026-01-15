@@ -1,15 +1,19 @@
 // Texel Tuning Implementation for Byte
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use crate::util::{self, Score};
+use rand::seq::{IndexedRandom, SliceRandom};
+use rand::rng;
+use rayon::prelude::*;
+use crate::board::{self, Board};
+use crate::util::{self, Score, board_from_fen};
 use crate::tunereval::{self, evaluate};
 
 // Global engine parameters that the evaluation function will use
 static mut CURRENT_ENGINE_PARAMS: Option<EngineParams> = None;
 // Training position with known result
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TrainingPosition {
-    pub fen: String,
+    pub board: Board,
     pub result: f64, // 1.0 = white win, 0.5 = draw, 0.0 = black loss
 }
 // All parameters we want to tune
@@ -85,22 +89,22 @@ impl TunableParams {
     // Initialize with current engine values
     pub fn baseline() -> Self {
         TunableParams {
-            pawn_mg: 67, pawn_eg: 89,
-            knight_mg: 305, knight_eg: 320,
-            bishop_mg: 335, bishop_eg: 292,
-            rook_mg: 462, rook_eg: 614,
+            pawn_mg: 65, pawn_eg: 95,
+            knight_mg: 322, knight_eg: 317,
+            bishop_mg: 365, bishop_eg: 338,
+            rook_mg: 461, rook_eg: 650,
             queen_mg: 1100, queen_eg: 1009,
             
-            knight_mobility_mg: 10, knight_mobility_eg: 8,
-            bishop_mobility_mg: 10, bishop_mobility_eg: 12,
+            knight_mobility_mg: 9, knight_mobility_eg: 10,
+            bishop_mobility_mg: 7, bishop_mobility_eg: 11,
             rook_mobility_mg: 5, rook_mobility_eg: 5,
-            queen_mobility_mg: 3, queen_mobility_eg: 6,
-            king_mobility_mg: 1, king_mobility_eg: 1,
+            queen_mobility_mg: 0, queen_mobility_eg: 11,
+            king_mobility_mg: -10, king_mobility_eg: 12,
             
             king_center_mg: 0, king_center_eg: 20,            
             doubled_pawn_penalty_mg: 1, doubled_pawn_penalty_eg: 1,
-            isolated_pawn_penalty_mg: 5, isolated_pawn_penalty_eg: 5,
-            pawn_advance_bonus_mg: 3, pawn_advance_bonus_eg: 3,
+            isolated_pawn_penalty_mg: 6, isolated_pawn_penalty_eg: 8,
+            pawn_advance_bonus_mg: 1, pawn_advance_bonus_eg: 3,
             passed_pawn_mg: 20, passed_pawn_eg: 20,
 
             pp_rank_2_mg: 5, pp_rank_2_eg: 5,
@@ -111,14 +115,14 @@ impl TunableParams {
             pp_rank_7_mg: 100, pp_rank_7_eg: 100,
 
             protected_passed_pawn_mg: 10, protected_passed_pawn_eg: 10,
-            two_attackers_bonus_mg: 3, two_attackers_bonus_eg: 0,
-            multiple_attackers_bonus_mg: 5, multiple_attackers_bonus_eg: 0,
-            bishop_attack_bonus_mg: 1, bishop_attack_bonus_eg: 0,
-            knight_attack_bonus_mg: 1, knight_attack_bonus_eg: 0,
-            rook_attack_bonus_mg: 2, rook_attack_bonus_eg: 0,
-            queen_attack_bonus_mg: 4, queen_attack_bonus_eg: 0,
-            no_pawn_shield_penalty_mg: 6, no_pawn_shield_penalty_eg: 0,
-            far_pawn_penalty_mg: 3, far_pawn_penalty_eg: 0,
+            two_attackers_bonus_mg: 3, two_attackers_bonus_eg: 1,
+            multiple_attackers_bonus_mg: 5, multiple_attackers_bonus_eg: 1,
+            bishop_attack_bonus_mg: 1, bishop_attack_bonus_eg: 1,
+            knight_attack_bonus_mg: 2, knight_attack_bonus_eg: 1,
+            rook_attack_bonus_mg: 2, rook_attack_bonus_eg: 1,
+            queen_attack_bonus_mg: 5, queen_attack_bonus_eg: 1,
+            no_pawn_shield_penalty_mg: 9, no_pawn_shield_penalty_eg: 0,
+            far_pawn_penalty_mg: 3, far_pawn_penalty_eg: 1,
         }
     }
     pub fn to_engine_params(&self) -> EngineParams {
@@ -217,7 +221,8 @@ impl TexelTuner {
                 if let Some(end_bracket) = line[bracket_pos + 1..].find(']') {
                     let result_str = &line[bracket_pos + 1..bracket_pos + 1 + end_bracket];
                     if let Ok(result) = result_str.trim().parse::<f64>() {
-                        positions.push(TrainingPosition { fen, result });
+                        let board = board_from_fen(&fen);
+                        positions.push(TrainingPosition {board, result });
                         count += 1;
                     }
                 }
@@ -266,12 +271,12 @@ impl TexelTuner {
         println!("Starting Texel tuning for {} epochs", epochs);
         
         for epoch in 0..epochs {
-            let initial_error = self.compute_error();
+            let initial_error = self.compute_error(10000000);
             
             // Compute gradients and update parameters
             self.gradient_descent_step();
             
-            let final_error = self.compute_error();            
+            let final_error = self.compute_error(10000000);            
             if epoch % 10 == 0 {
                 println!("Epoch {}: Error {:.6} -> {:.6} (improvement: {:.6})", 
                     epoch, initial_error, final_error, initial_error - final_error);
@@ -288,7 +293,7 @@ impl TexelTuner {
                         break;
             }
             if final_error > initial_error{
-                self.learning_rate *= 1.05;
+                self.learning_rate *= 0.9;
             }
         }
         
@@ -296,49 +301,47 @@ impl TexelTuner {
         self.print_results(true);
     }
     // Compute mean squared error across all positions
-    fn compute_error(&self) -> f64 {
-        let mut total_error = 0.0;
-        let mut count = 0;
-        
-        // Set engine to use our current parameters
-        let engine_params = self.params.to_engine_params();
-        set_engine_params(engine_params);
-        
-        for pos in &self.positions {
-            if let Ok(eval) = evaluate_fen(engine_params, &pos.fen) {
-                let predicted = sigmoid(self.k * eval as f64);
-                let error = (predicted - pos.result).powi(2);
-                total_error += error;
-                count += 1;
-            }
-        }
-        
-        if count > 0 {
-            total_error / count as f64
+    fn compute_error(&self, sample_size: usize) -> f64 {
+        let mut rng = rng();
+        let sample: Vec<&TrainingPosition> = if self.positions.len() > sample_size {
+            self.positions.choose_multiple(&mut rng, sample_size).collect()
         } else {
-            f64::INFINITY
-        }
+            self.positions.iter().collect()
+        };
+
+        let engine_params = self.params.to_engine_params();
+        
+        // Parallel evaluation of the sample
+        let total_error: f64 = sample.par_iter()
+            .map(|pos| {
+                let eval = evaluate_fen(engine_params, &pos.board).unwrap_or(0);
+                let predicted = sigmoid(self.k * eval as f64);
+                (predicted - pos.result).powi(2)
+            })
+            .sum();
+
+        total_error / sample.len() as f64
     }
    // Perform one gradient descent step
     fn gradient_descent_step(&mut self) {
         const DELTA: i32 = 1; // Small change for numerical gradient
         
-        let base_error = self.compute_error();
+        let base_error = self.compute_error(10000000);
         
         // Material values
         self.update_param_by_field("pawn_mg", base_error, DELTA);
         self.update_param_by_field("pawn_eg", base_error, DELTA);
-        self.update_param_by_field("knight_mg", base_error, DELTA);
-        self.update_param_by_field("knight_eg", base_error, DELTA);
-        self.update_param_by_field("bishop_mg", base_error, DELTA);
-        self.update_param_by_field("bishop_eg", base_error, DELTA);
-        self.update_param_by_field("rook_mg", base_error, DELTA);
-        self.update_param_by_field("rook_eg", base_error, DELTA);
-        self.update_param_by_field("queen_mg", base_error, DELTA);
-        self.update_param_by_field("queen_eg", base_error, DELTA);
+        self.update_param_by_field("knight_mg", base_error, 3 * DELTA);
+        self.update_param_by_field("knight_eg", base_error, 3 * DELTA);
+        self.update_param_by_field("bishop_mg", base_error, 3 * DELTA);
+        self.update_param_by_field("bishop_eg", base_error, 3 * DELTA);
+        self.update_param_by_field("rook_mg", base_error, 5 * DELTA);
+        self.update_param_by_field("rook_eg", base_error, 5 * DELTA);
+        self.update_param_by_field("queen_mg", base_error, 9 * DELTA);
+        self.update_param_by_field("queen_eg", base_error, 9 * DELTA);
 
         // Mobility weights
-        /*self.update_param_by_field("knight_mobility_mg", base_error, DELTA);
+        self.update_param_by_field("knight_mobility_mg", base_error, DELTA);
         self.update_param_by_field("knight_mobility_eg", base_error, DELTA);
         self.update_param_by_field("bishop_mobility_mg", base_error, DELTA);
         self.update_param_by_field("bishop_mobility_eg", base_error, DELTA);
@@ -389,7 +392,7 @@ impl TexelTuner {
         self.update_param_by_field("no_pawn_shield_penalty_mg", base_error, DELTA);
         self.update_param_by_field("no_pawn_shield_penalty_eg", base_error, DELTA);
         self.update_param_by_field("far_pawn_penalty_mg", base_error, DELTA);
-        self.update_param_by_field("far_pawn_penalty_eg", base_error, DELTA);*/
+        self.update_param_by_field("far_pawn_penalty_eg", base_error, DELTA);
     }
 
     // Update single parameter by field name
@@ -397,11 +400,11 @@ impl TexelTuner {
         let original_value = self.get_param_value(field_name);
         // Test positive change
         self.set_param_value(field_name, original_value + delta);
-        let pos_error = self.compute_error();
+        let pos_error = self.compute_error(10000000);
         
         // Test negative change
         self.set_param_value(field_name, original_value - delta);
-        let neg_error = self.compute_error();
+        let neg_error = self.compute_error(10000000);
         
         // Compute gradient
         let gradient = (pos_error - neg_error) / (2.0 * delta as f64);
@@ -693,19 +696,18 @@ pub fn set_engine_params(params: EngineParams) {
 fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x/200.0).exp())
 }
-fn evaluate_fen(params: EngineParams, fen: &str) -> Result<i32, String> {
+fn evaluate_fen(params: EngineParams, board: &Board) -> Result<i32, String> {
         // Load FEN into your board representation
         // Call your evaluate() function
         // Return centipawn evaluation
-        let board = util::board_from_fen(fen);
-        let eval = tunereval::evaluate(&board, &params);
+        let eval = tunereval::evaluate(board, &params);
         Ok(eval)
     }
-
+        
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start small for testing
     let mut tuner = TexelTuner::new("positions.txt", Some(1000000))?;
-    tuner.learning_rate = 0.0;
+    tuner.learning_rate = 0.000001;
     tuner.tune(500); // Just 50 epochs for testing
     
     Ok(())

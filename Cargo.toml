@@ -9,6 +9,7 @@ edition = "2024"
 [dependencies]
 once_cell = "1.21.3"
 rand = "0.9.1"
+rayon = "1.7"
 strum = "0.27.1"
 strum_macros = "0.27.1"
 

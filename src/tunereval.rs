@@ -11,7 +11,35 @@ const KING_SAFETY_TABLE: [i32; 100] = [
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500
 ];
-
+pub fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i32, beta: i32, depth: i32, params: &tuner::EngineParams) -> i32 {
+    let eval = evaluate(board, params);
+    if eval >= beta {
+        return beta;
+    } else if eval >= alpha {
+        alpha = eval;
+    }
+    let mut moves = board.get_ordered_moves(false, false, true, None, &[util::Move::from_parts(
+        0 as u8,
+        0 as u8,
+        util::MoveFlag::Quiet as u8,
+        ); 2]);
+    if depth_searched <= 2 * depth && moves.len() != 0
+    {
+        for m in moves.iter(){
+            board::make_move(board, &m);
+            let eval = -minimax_captures(board, depth_searched + 1, -beta, -alpha, depth, params);
+            if eval >= beta {
+                board::undo_move(board);
+                return beta; // Beta cut-off
+            }
+            if eval > alpha {
+                alpha = eval; // Update alpha
+            }
+            board::undo_move(board);
+        }
+    }
+    alpha
+}
 pub fn evaluate(board: &board::Board, params: &tuner::EngineParams) -> i32 {
     let phase = board.phase;
     let material_score = material_score(board, params); // done!

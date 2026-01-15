@@ -17,8 +17,26 @@ mod zobrist;
 mod table;
 mod tuner;
 mod tunereval;
-pub const PIECE_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(66,90), Score::new(306,321), Score::new(336,293), Score::new(461,613), Score::new(1101,1010), Score::new(100000,100000)];
-pub const MOBILITY_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(0,0), Score::new(10,8), Score::new(10,7), Score::new(3,6), Score::new(2,5), Score::new(2,5)];
+pub const PIECE_VALUES: [Score; 8] = [
+    Score::new(0,0), // Empty
+    Score::new(0,0), // None
+    Score::new(65, 95), // Pawn
+    Score::new(322, 317), // Knight
+    Score::new(365, 338), // Bishop
+    Score::new(461, 650), // Rook
+    Score::new(1100, 1009), // Queen
+    Score::new(100000, 100000) // King
+];
+
+// === Mobility Weights ===
+pub const MOBILITY_VALUES: [Score; 8] = [
+    Score::new(0,0), Score::new(0,0), Score::new(0,0),
+    Score::new(9, 10), // Knight
+    Score::new(7, 11), // Bishop
+    Score::new(5, 5), // Rook
+    Score::new(0, 11), // Queen
+    Score::new(-10, 12), // King
+];
 pub const WINDOW: i32 = 33; // Search window for aspiration
 // A simple pawn transposition table using a hash map.
 // Key: zobrist hash of pawn structure, Value: evaluation score (i32)

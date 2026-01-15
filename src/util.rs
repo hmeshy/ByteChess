@@ -4,22 +4,23 @@ use crate::board::{TOTAL_PHASE, KNIGHT_PHASE, BISHOP_PHASE, ROOK_PHASE, QUEEN_PH
 use crate::table::PawnEntry;
 use crate::table::PawnTable;
 use crate::{board, PIECE_VALUES, MOBILITY_VALUES};
-const KING_CENTER_BONUS: Score = Score::new(0,20);
-const DOUBLED_PAWN_PENALTY: Score = Score::new(1,1);
-const ISOLATED_PAWN_PENALTY: Score = Score::new(5,5);
-const PAWN_ADVANCE_BONUS: Score = Score::new(3,3);
-const PASSED_PAWN_BASE: Score = Score::new(20,20);
+const KING_CENTER_BONUS: Score = Score::new(-6, 4);
+const DOUBLED_PAWN_PENALTY: Score = Score::new(17, 17);
+const ISOLATED_PAWN_PENALTY: Score = Score::new(25, 2);
+const PAWN_ADVANCE_BONUS: Score = Score::new(9, -1);
+const PASSED_PAWN_BASE: Score = Score::new(-14, 14);
+// === Passed Pawn Rank Bonuses ===
 const PASSED_PAWN_RANK_BONUS: [Score; 8] = [
-    Score::new(0, 0),      // rank 0
-    Score::new(5, 5),      // rank 1  
-    Score::new(10, 10),     // rank 2
-    Score::new(20, 20),    // rank 3
-    Score::new(35, 35),    // rank 4
-    Score::new(60, 60),    // rank 5
-    Score::new(100, 100),   // rank 6
-    Score::new(0, 0),      // rank 7
+    Score::new(0, 0),
+    Score::new(1, 19), // Rank 2
+    Score::new(-3, 2), // Rank 3
+    Score::new(8, 12), // Rank 4
+    Score::new(23, 28), // Rank 5
+    Score::new(60, 51), // Rank 6
+    Score::new(101, 83), // Rank 7
+    Score::new(0, 0) 
 ];
-const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(10,10);
+const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(2, 13);
 // King safety constants
 const KING_SAFETY_TABLE: [i32; 100] = [
     0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
@@ -39,6 +40,7 @@ const MULTIPLE_ATTACKER_BONUS: Score = Score::new(5,0); // Bonus for multiple at
 const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(1,0), Score::new(1,0), Score::new(2,0), Score::new(4,0), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
 const NO_PAWN_SHIELD_PENALTY: Score = Score::new(6,0);
 const FAR_PAWN_PENALTY: Score = Score::new(3,0);
+
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Color {
@@ -613,7 +615,7 @@ impl Score {
     // Taper the score based on game phase (0-255 scale)
     #[inline(always)]
     pub fn taper(&self, phase: u8) -> i32 {
-        // phase: 255 = opening/middlegame, 0 = endgame
+        // phase: 0 = opening/middlegame, 255 = endgame
         // Linear interpolation with rounding
         ((self.mg * (255 - phase) as i32 + self.eg * phase as i32)) / 255
     }
