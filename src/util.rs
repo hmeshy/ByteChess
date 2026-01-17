@@ -4,22 +4,26 @@ use crate::board::{TOTAL_PHASE, KNIGHT_PHASE, BISHOP_PHASE, ROOK_PHASE, QUEEN_PH
 use crate::table::PawnEntry;
 use crate::table::PawnTable;
 use crate::{board, PIECE_VALUES, MOBILITY_VALUES};
-const KING_CENTER_BONUS: Score = Score::new(0,20);
-const DOUBLED_PAWN_PENALTY: Score = Score::new(1,1);
-const ISOLATED_PAWN_PENALTY: Score = Score::new(5,5);
-const PAWN_ADVANCE_BONUS: Score = Score::new(3,3);
-const PASSED_PAWN_BASE: Score = Score::new(20,20);
+const KING_CENTER_BONUS: Score = Score::new(-18,19);
+//const DOUBLED_PAWN_PENALTY: Score = Score::new(1,1);
+//const ISOLATED_PAWN_PENALTY: Score = Score::new(5,5);
+//const PAWN_ADVANCE_BONUS: Score = Score::new(2,2);
+//const PASSED_PAWN_BASE: Score = Score::new(20,20);
+const DOUBLED_PAWN_PENALTY: Score = Score::new(3,24);
+const ISOLATED_PAWN_PENALTY: Score = Score::new(12,16);
+const PAWN_ADVANCE_BONUS: Score = Score::new(2,1);
+const PASSED_PAWN_BASE: Score = Score::new(-19,59);
 const PASSED_PAWN_RANK_BONUS: [Score; 8] = [
     Score::new(0, 0),      // rank 0
-    Score::new(5, 5),      // rank 1  
-    Score::new(10, 10),     // rank 2
-    Score::new(20, 20),    // rank 3
-    Score::new(35, 35),    // rank 4
-    Score::new(60, 60),    // rank 5
-    Score::new(100, 100),   // rank 6
+    Score::new(-2, -38),      // rank 1  
+    Score::new(-8, -42),     // rank 2
+    Score::new(-3, -18),    // rank 3
+    Score::new(18, 15),    // rank 4
+    Score::new(35, 92),    // rank 5
+    Score::new(19, 155),   // rank 6
     Score::new(0, 0),      // rank 7
 ];
-const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(10,10);
+const PROTECTED_PASSED_PAWN_BONUS: Score = Score::new(26,-1);
 // King safety constants
 const KING_SAFETY_TABLE: [i32; 100] = [
     0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
@@ -33,12 +37,12 @@ const KING_SAFETY_TABLE: [i32; 100] = [
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
   500, 500, 500, 500, 500, 500, 500, 500, 500, 500
 ];
-const TWO_ATTACKER_BONUS: Score = Score::new(3,0); // Bonus for two attackers on the king   
-const MULTIPLE_ATTACKER_BONUS: Score = Score::new(5,0); // Bonus for multiple attackers on the king
+const TWO_ATTACKER_BONUS: Score = Score::new(3,1); // Bonus for two attackers on the king  
+const MULTIPLE_ATTACKER_BONUS: Score = Score::new(3,0); // Bonus for multiple attackers on the king
 // Attack weights for different piece types
-const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(1,0), Score::new(1,0), Score::new(2,0), Score::new(4,0), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
-const NO_PAWN_SHIELD_PENALTY: Score = Score::new(6,0);
-const FAR_PAWN_PENALTY: Score = Score::new(3,0);
+const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(3,0), Score::new(5,0), Score::new(3,0), Score::new(4,3), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
+const NO_PAWN_SHIELD_PENALTY: Score = Score::new(8,0);
+const FAR_PAWN_PENALTY: Score = Score::new(2,3);
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Color {
@@ -613,7 +617,7 @@ impl Score {
     // Taper the score based on game phase (0-255 scale)
     #[inline(always)]
     pub fn taper(&self, phase: u8) -> i32 {
-        // phase: 255 = opening/middlegame, 0 = endgame
+        // phase: 0 = opening/middlegame, 255 = endgame
         // Linear interpolation with rounding
         ((self.mg * (255 - phase) as i32 + self.eg * phase as i32)) / 255
     }

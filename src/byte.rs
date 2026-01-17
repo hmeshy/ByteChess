@@ -17,8 +17,24 @@ mod zobrist;
 mod table;
 mod tuner;
 mod tunereval;
-pub const PIECE_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(66,90), Score::new(306,321), Score::new(336,293), Score::new(461,613), Score::new(1101,1010), Score::new(100000,100000)];
-pub const MOBILITY_VALUES: [Score; 8] = [Score::new(0,0), Score::new(0,0), Score::new(0,0), Score::new(10,8), Score::new(10,7), Score::new(3,6), Score::new(2,5), Score::new(2,5)];
+pub const PIECE_VALUES: [Score; 8] = [
+    Score::new(0,0), // Empty
+    Score::new(0,0), // None
+    Score::new(73, 109), // Pawn
+    Score::new(306, 314), // Knight
+    Score::new(362, 325), // Bishop
+    Score::new(457, 625), // Rook
+    Score::new(1100, 1010), // Queen
+    Score::new(100000, 100000) // King
+];// === Mobility Weights ===
+pub const MOBILITY_VALUES: [Score; 8] = [
+    Score::new(0,0), Score::new(0,0), Score::new(0,0),
+    Score::new(9, 11), // Knight
+    Score::new(4, 10), // Bishop
+    Score::new(4, 6), // Rook
+    Score::new(-1, 12), // Queen
+    Score::new(-11, 13), // King
+];
 pub const WINDOW: i32 = 33; // Search window for aspiration
 // A simple pawn transposition table using a hash map.
 // Key: zobrist hash of pawn structure, Value: evaluation score (i32)
@@ -209,7 +225,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     let mut prev_eval = 0;
     let mut pv = Vec::new();
     if let Some(entry) = tt.probe(board.zobrist_hash) {
-        if let Some(mv) = entry.best_move {
+        if let Some(mv) = entry.get_best_move() {
             best_move = mv;
             previous_best_move = best_move;
         }
@@ -281,11 +297,11 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     // TT probe
     let mut tt_best_move = None;
     if let Some(entry) = tt.probe(board.zobrist_hash) {
-        if entry.depth >= depth {
-            match entry.bound {
+        if entry.get_depth() >= depth {
+            match entry.get_bound() {
                 Bound::Exact => {   
                     pv.clear();
-                    if let Some(mv) = entry.best_move {
+                    if let Some(mv) = entry.get_best_move() {
                         pv.push(mv);
                     }
                     return entry.score;}
@@ -293,7 +309,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 Bound::Upper => if entry.score <= alpha { return entry.score; },
             }
         }
-        tt_best_move = entry.best_move;
+        tt_best_move = entry.get_best_move();
     }
     let killer_moves = if (depth_searched as usize) < search_info.killer_moves.len() {
         search_info.killer_moves[depth_searched as usize]
@@ -317,11 +333,12 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         if eval >= beta {
             tt.store(TTEntry {
                 zobrist: board.zobrist_hash,
-                best_move: None,
-                depth,
+                best_move: 0,
+                depth: depth as u8,
                 score: beta,
-                bound: Bound::Lower,
+                bound: Bound::Lower.to_u8(),
                 age: tt.age,
+                _pad: 0,
             });
             pv.clear();
             return beta; // Beta cut-off
@@ -361,11 +378,12 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 pv.extend(child_pv);
                 tt.store(TTEntry {
                     zobrist: board.zobrist_hash,
-                    best_move: Some(m),
-                    depth,
+                    best_move: m.info,
+                    depth: depth as u8,
                     score: beta,
-                    bound: Bound::Lower,
+                    bound: Bound::Lower.to_u8(),
                     age: tt.age,
+                    _pad: 0,
                 });
                 return beta;
             }
@@ -421,11 +439,12 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 pv.extend(child_pv);
                 tt.store(TTEntry {
                     zobrist: board.zobrist_hash,
-                    best_move: Some(*m),
-                    depth,
+                    best_move: m.info,
+                    depth: depth as u8,
                     score: beta,
-                    bound: Bound::Lower,
+                    bound: Bound::Lower.to_u8(),
                     age: tt.age,
+                    _pad: 0,
                 });
                 return beta; // Beta cut-off
             }
@@ -451,11 +470,12 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     // Store TT entry (exact or upper bound)
     tt.store(TTEntry {
         zobrist: board.zobrist_hash,
-        best_move,
-        depth,
+        best_move: best_move.map(|m| m.info).unwrap_or(0),
+        depth: depth as u8,
         score: alpha,
-        bound: if best_score > i32::MIN + 1 { Bound::Exact } else { Bound::Upper },
+        bound: if best_score > i32::MIN + 1 { Bound::Exact } else { Bound::Upper }.to_u8(),
         age: tt.age,
+        _pad: 0,
     });
     pv.clear();
     pv.extend(best_pv.iter());

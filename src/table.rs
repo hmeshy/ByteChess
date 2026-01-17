@@ -9,15 +9,53 @@ pub enum Bound {
     Upper,      // All-Node: upper bound (fail high)
 }
 
+impl Bound {
+    pub fn to_u8(self) -> u8 {
+        match self {
+            Bound::Exact => 0,
+            Bound::Lower => 1,
+            Bound::Upper => 2,
+        }
+    }
+
+    pub fn from_u8(val: u8) -> Self {
+        match val {
+            0 => Bound::Exact,
+            1 => Bound::Lower,
+            _ => Bound::Upper,
+        }
+    }
+}
+
 // A transposition table entry
+#[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct TTEntry {
-    pub zobrist: u64,      // Zobrist hash of the position
-    pub best_move: Option<Move>, // Best/refutation move found
-    pub depth: i32,        // Search depth at which this entry was stored
-    pub score: i32,        // Score (can be mate distance encoded)
-    pub bound: Bound,      // Node type (Exact, Lower, Upper)
-    pub age: u8,           // For replacement strategy
+    pub zobrist: u64,      // 8 bytes
+    pub best_move: u16,    // 2 bytes
+    pub depth: u8,         // 1 byte
+    pub bound: u8,         // 1 byte
+    pub age: u8,           // 1 byte
+    pub _pad: u8,          // 1 byte (explicit padding)
+    pub score: i32,        // 4 bytes
+}
+
+impl TTEntry {
+    pub fn get_bound(&self) -> Bound {
+        Bound::from_u8(self.bound)
+    }
+
+    pub fn get_best_move(&self) -> Option<Move> {
+        if self.best_move == 0 {
+            None
+        } else {
+            Some(Move { info: self.best_move })
+        }
+    }
+
+    pub fn get_depth(&self) -> i32 {
+        self.depth as i32
+    }
 }
 #[derive(Copy, Clone)]
 pub struct PawnEntry {
