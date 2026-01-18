@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use crate::util::{Move, Score};
 
+const DEFAULT_TT_SIZE_MB: usize = 256;
+
 // The type of bound stored in the table
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Bound {
@@ -94,8 +96,10 @@ impl PawnTable {
 }
 
 impl TranspositionTable {
-    pub fn new() -> Self {
-        let size = 1 << 24; // 16M entries (adjust as needed)
+    pub fn new(size_mb: usize) -> Self {
+        let entry_size = std::mem::size_of::<TTEntry>();
+        let target_size_bytes = size_mb * 1024 * 1024;
+        let size = target_size_bytes / entry_size;
         Self {
             table: vec![None; size],
             mask: size - 1,

@@ -80,7 +80,8 @@ fn main() {
     let mut board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     board.zobrist_hash = zobrist::zobrist_hash(&board);
     let mut search_info = SearchInfo::new();
-    let mut tt = TranspositionTable::new();
+    let mut hash_size_mb = 256;
+    let mut tt = TranspositionTable::new(hash_size_mb);
     let mut input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut my_time: u64 = 1000 * 160;      // Bot's remaining time in ms
     let mut my_inc: u64 = 1000 * 0;       // Bot's increment in ms, keep at 0 if updating from uci
@@ -102,10 +103,19 @@ fn main() {
             "uci" => {
                 println!("id name ByteChess");
                 println!("id author H&LM");
+                println!("option name Hash type spin default 256 min 1 max 1024");
                 println!("uciok");
             }
             "isready" => {
                 println!("readyok");
+            }
+            "setoption" => {
+                if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "Hash" && tokens[3] == "value" {
+                    if let Ok(value) = tokens[4].parse::<usize>() {
+                        hash_size_mb = value;
+                        tt = TranspositionTable::new(hash_size_mb);
+                    }
+                }
             }
             "testeval" => {
                 // Print the evaluation of the current position
@@ -115,7 +125,7 @@ fn main() {
                 mate_eval = 99900; // Reset mate evaluation for new game
                 board = util::board_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
                 board.zobrist_hash = zobrist::zobrist_hash(&board);
-                tt = TranspositionTable::new();
+                tt = TranspositionTable::new(hash_size_mb);
                 input_fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
                 let mut board_hist: Vec<String> = Vec::new();
                 board_hist.push(input_fen.clone());
