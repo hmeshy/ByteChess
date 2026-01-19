@@ -4,9 +4,9 @@
 It’s my personal project to both:
 
 1. Learn how to code in Rust.  
-2. Explore how strong a chess engine can be **without** piece-square evaluation features like piece-square tables.
+2. Explore how strong a chess engine can be **without** structural evaluation features like piece-square tables, instead focusing on dynamic positional factors like mobility and activity.
 
-Currently, I estimate the engine’s strength to be around **~1800 Elo** (as of version 1.3).
+Currently, I estimate the engine’s strength to be between **2000-2100 Elo** (as of version 2.0).
 
 ---
 
@@ -43,6 +43,7 @@ cargo run --release
 - Mobility
 - Basic Pawn Structure
 - Basic King Safety
+- (As of v2.0) Tuned Parameters via Texel's Tuning Method
 
 ---
 
