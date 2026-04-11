@@ -202,7 +202,9 @@ fn main() {
 
                 // Record the start time before move calculation
                 let start = std::time::Instant::now();
-                let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
+                let reserve = std::cmp::max(30, std::cmp::min((my_time / 4) as u64, 2 * my_inc + 30));
+                let hard_limit = my_time.saturating_sub(reserve); // leave a buffer of time after every move to avoid low time in LTC, timeouts in STC
+                let think_time = std::cmp::min(my_time/20 + my_inc/2, hard_limit); // 5% of time + half increment for thinking time
                 let m = think(&mut board, think_time, start, &mut tt, &mut mate_eval, &mut search_info, &mut pawn_tt);
                 // After move selection, update the bot's time
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -361,58 +363,62 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
     let mut best_score = i32::MIN + 1;
     let mut best_move: Option<util::Move> = None;
     let mut best_pv: Vec<util::Move> = Vec::new();
+    let mut searched_hash_move = false;
+    let mut moves_searched: u32 = 0;
     // If a hash move exists, try it first
     if let Some(hash_move) = tt_best_move {
-        // Only try if the hash move is legal in this position
         let m = hash_move;
         board::make_move(board, &m);
-        if !board.king_is_attacked() {
-            has_moves = true;
-            let mut child_pv = Vec::new();
-            let mut eval;
-            // late move reduction not applied to hash move
-            eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
-            if (search_info.nodes & 0x3FF) == 0 && timer.elapsed().as_millis() > think_time as u128 {
-                board::undo_move(board);
-                pv.clear();
-                pv.extend(best_pv.iter());
-                return alpha;
-            }
-            if eval >= beta {
-                board::undo_move(board);
-                if m.flags() & 8 as u8 == 0 {
-                    search_info.update_killer(depth_searched as usize, m);
-                }
-                pv.clear();
-                pv.push(m);
-                pv.extend(child_pv);
-                tt.store(TTEntry {
-                    zobrist: board.zobrist_hash,
-                    best_move: m.info,
-                    depth: depth as u8,
-                    score: beta,
-                    bound: Bound::Lower.to_u8(),
-                    age: tt.age,
-                    _pad: 0,
-                });
-                return beta;
-            }
-            if eval > alpha {
-                alpha = eval;
-                best_score = eval;
-                best_move = Some(m);
-                best_pv.clear();
-                best_pv.push(m);
-                best_pv.extend(child_pv);
-            } 
+        searched_hash_move = true;
+        moves_searched += 1;
+        has_moves = true;
+        let mut child_pv = Vec::new();
+        let mut eval;
+        // late move reduction not applied to hash move
+        eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+        if (search_info.nodes & 0x3FF) == 0 && timer.elapsed().as_millis() > think_time as u128 {
+            board::undo_move(board);
+            pv.clear();
+            pv.extend(best_pv.iter());
+            return alpha;
         }
+        if eval >= beta {
+            board::undo_move(board);
+            if m.flags() & 8 as u8 == 0 {
+                search_info.update_killer(depth_searched as usize, m);
+            }
+            pv.clear();
+            pv.push(m);
+            pv.extend(child_pv);
+            tt.store(TTEntry {
+                zobrist: board.zobrist_hash,
+                best_move: m.info,
+                depth: depth as u8,
+                score: beta,
+                bound: Bound::Lower.to_u8(),
+                age: tt.age,
+                _pad: 0,
+            });
+            return beta;
+        }
+        if eval > alpha {
+            alpha = eval;
+            best_score = eval;
+            best_move = Some(m);
+            best_pv.clear();
+            best_pv.push(m);
+            best_pv.extend(child_pv);
+        } 
         board::undo_move(board);
     }
     let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves);
     for (m_index, m) in moves.iter().enumerate(){
-        if m_index == 0 && let Some(hash_move) = tt_best_move
-        {
-            continue; // Skip the hash move if it was already tried
+        if searched_hash_move {
+            if let Some(hash_move) = tt_best_move {
+                if *m == hash_move {
+                    continue; // Skip the hash move if it was already tried
+                }
+            }
         }
         board::make_move(board, &m);
         if !board.king_is_attacked()
@@ -420,18 +426,25 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             has_moves = true;
             let mut child_pv = Vec::new();
             let mut eval;
-            // late move reduction
-            if depth >= 3 && m_index >= 4 
+            if moves_searched == 0 {
+                // Normal search
+                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+            }
+            // Late move reduction
+            else if depth >= 3 && moves_searched > 1 
             {
                 // Reduce the depth for later moves
-                eval = -minimax(board, depth - 2, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
-                if eval > alpha { // a promising move, so search deeper
-                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                // Zero Window Search (PVS)
+                eval = -minimax(board, depth - 2, depth_searched + 1, -alpha-1, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                if eval > alpha && eval < beta { // still beats it, do full window
+                    eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
                 }
 
-            } else {
-                // Normal search depth
-                eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+            } else { // Just PVS
+                eval = -minimax(board, depth - 1, depth_searched + 1, -alpha-1, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                if eval > alpha && eval < beta { //beats it, do full window
+                    eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                }            
             }
             if (search_info.nodes & 0x3FF) == 0 && timer.elapsed().as_millis() > think_time as u128 {
                 board::undo_move(board);
@@ -466,6 +479,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 best_pv.push(*m);
                 best_pv.extend(child_pv);
             }
+            moves_searched += 1;
         }
         board::undo_move(board);
     }

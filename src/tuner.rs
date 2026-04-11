@@ -80,45 +80,58 @@ pub struct TunableParams {
     pub no_pawn_shield_penalty_eg: i32,
     pub far_pawn_penalty_mg: i32,
     pub far_pawn_penalty_eg: i32,
+    pub king_safety_table: [i32; 100],
 }
 impl TunableParams {
     // Initialize with current engine values
     pub fn baseline() -> Self {
         TunableParams {
-            pawn_mg: 67, pawn_eg: 89,
-            knight_mg: 305, knight_eg: 320,
-            bishop_mg: 335, bishop_eg: 292,
-            rook_mg: 462, rook_eg: 614,
-            queen_mg: 1100, queen_eg: 1009,
+            pawn_mg: 73, pawn_eg: 109,
+            knight_mg: 306, knight_eg: 314,
+            bishop_mg: 362, bishop_eg: 325,
+            rook_mg: 457, rook_eg: 625,
+            queen_mg: 1100, queen_eg: 1010,
             
-            knight_mobility_mg: 10, knight_mobility_eg: 8,
-            bishop_mobility_mg: 10, bishop_mobility_eg: 12,
-            rook_mobility_mg: 5, rook_mobility_eg: 5,
-            queen_mobility_mg: 3, queen_mobility_eg: 6,
-            king_mobility_mg: 1, king_mobility_eg: 1,
+            knight_mobility_mg: 9, knight_mobility_eg: 11,
+            bishop_mobility_mg: 4, bishop_mobility_eg: 10,
+            rook_mobility_mg: 4, rook_mobility_eg: 6,
+            queen_mobility_mg: -1, queen_mobility_eg: 12,
+            king_mobility_mg: -11, king_mobility_eg: 13,
             
-            king_center_mg: 0, king_center_eg: 20,            
-            doubled_pawn_penalty_mg: 1, doubled_pawn_penalty_eg: 1,
-            isolated_pawn_penalty_mg: 5, isolated_pawn_penalty_eg: 5,
-            pawn_advance_bonus_mg: 3, pawn_advance_bonus_eg: 3,
-            passed_pawn_mg: 20, passed_pawn_eg: 20,
+            king_center_mg: -18, king_center_eg: 19,            
+            doubled_pawn_penalty_mg: 3, doubled_pawn_penalty_eg: 24,
+            isolated_pawn_penalty_mg: 12, isolated_pawn_penalty_eg: 16,
+            pawn_advance_bonus_mg: 2, pawn_advance_bonus_eg: 1,
+            passed_pawn_mg: -19, passed_pawn_eg: 59,
 
-            pp_rank_2_mg: 5, pp_rank_2_eg: 5,
-            pp_rank_3_mg: 10, pp_rank_3_eg: 10,
-            pp_rank_4_mg: 20, pp_rank_4_eg: 20,
-            pp_rank_5_mg: 35, pp_rank_5_eg: 35,
-            pp_rank_6_mg: 60, pp_rank_6_eg: 60,
-            pp_rank_7_mg: 100, pp_rank_7_eg: 100,
+            pp_rank_2_mg: -2, pp_rank_2_eg: -38,
+            pp_rank_3_mg: -8, pp_rank_3_eg: -42,
+            pp_rank_4_mg: -3, pp_rank_4_eg: -18,
+            pp_rank_5_mg: 18, pp_rank_5_eg: 15,
+            pp_rank_6_mg: 35, pp_rank_6_eg: 92,
+            pp_rank_7_mg: 19, pp_rank_7_eg: 155,
 
-            protected_passed_pawn_mg: 10, protected_passed_pawn_eg: 10,
-            two_attackers_bonus_mg: 3, two_attackers_bonus_eg: 0,
-            multiple_attackers_bonus_mg: 5, multiple_attackers_bonus_eg: 0,
-            bishop_attack_bonus_mg: 1, bishop_attack_bonus_eg: 0,
-            knight_attack_bonus_mg: 1, knight_attack_bonus_eg: 0,
-            rook_attack_bonus_mg: 2, rook_attack_bonus_eg: 0,
-            queen_attack_bonus_mg: 4, queen_attack_bonus_eg: 0,
-            no_pawn_shield_penalty_mg: 6, no_pawn_shield_penalty_eg: 0,
-            far_pawn_penalty_mg: 3, far_pawn_penalty_eg: 0,
+            protected_passed_pawn_mg: 26, protected_passed_pawn_eg: -1,
+            two_attackers_bonus_mg: 3, two_attackers_bonus_eg: 1,
+            multiple_attackers_bonus_mg: 3, multiple_attackers_bonus_eg: 0,
+            bishop_attack_bonus_mg: 5, bishop_attack_bonus_eg: 0,
+            knight_attack_bonus_mg: 3, knight_attack_bonus_eg: 0,
+            rook_attack_bonus_mg: 3, rook_attack_bonus_eg: 0,
+            queen_attack_bonus_mg: 4, queen_attack_bonus_eg: 3,
+            no_pawn_shield_penalty_mg: 8, no_pawn_shield_penalty_eg: 0,
+            far_pawn_penalty_mg: 2, far_pawn_penalty_eg: 3,
+            king_safety_table: [
+                0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
+               18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
+               68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
+              140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+              260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+              377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+              494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+              500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+              500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+              500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+            ],
         }
     }
     pub fn to_engine_params(&self) -> EngineParams {
@@ -169,6 +182,7 @@ impl TunableParams {
             ],
             no_pawn_shield_penalty: Score::new(self.no_pawn_shield_penalty_mg, self.no_pawn_shield_penalty_eg),
             far_pawn_penalty: Score::new(self.far_pawn_penalty_mg, self.far_pawn_penalty_eg),
+            king_safety_table: self.king_safety_table,
         }
     }
 }
@@ -233,7 +247,7 @@ impl TexelTuner {
     fn find_optimal_k(positions: &[TrainingPosition]) -> Result<f64, Box<dyn std::error::Error>> {
         // Test different K values to minimize error with current evaluation
         let mut best_k = 1.4;
-        /*let mut best_error = f64::INFINITY;
+        let mut best_error = f64::INFINITY;
         
         for k_test in [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0] {
             let mut total_error = 0.0;
@@ -258,7 +272,7 @@ impl TexelTuner {
             }
         }
         
-        println!("Optimal K value: {:.3} (error: {:.6})", best_k, best_error);*/
+        println!("Optimal K value: {:.3} (error: {:.6})", best_k, best_error);
         Ok(best_k)
     }
     // Main tuning loop
@@ -287,8 +301,10 @@ impl TexelTuner {
                 println!("Converged at epoch {}", epoch);
                         break;
             }
-            if final_error > initial_error{
-                self.learning_rate *= 1.05;
+            // If error increased (worse performance), reduce learning rate
+            if final_error > initial_error {
+                self.learning_rate *= 0.9; // Reduce learning rate by 10%
+                println!("Error increased, reducing learning rate to {:.4}", self.learning_rate);
             }
         }
         
@@ -321,103 +337,135 @@ impl TexelTuner {
     }
    // Perform one gradient descent step
     fn gradient_descent_step(&mut self) {
-        const DELTA: i32 = 1; // Small change for numerical gradient
-        
         let base_error = self.compute_error();
         
         // Material values
-        self.update_param_by_field("pawn_mg", base_error, DELTA);
-        self.update_param_by_field("pawn_eg", base_error, DELTA);
-        self.update_param_by_field("knight_mg", base_error, DELTA);
-        self.update_param_by_field("knight_eg", base_error, DELTA);
-        self.update_param_by_field("bishop_mg", base_error, DELTA);
-        self.update_param_by_field("bishop_eg", base_error, DELTA);
-        self.update_param_by_field("rook_mg", base_error, DELTA);
-        self.update_param_by_field("rook_eg", base_error, DELTA);
-        self.update_param_by_field("queen_mg", base_error, DELTA);
-        self.update_param_by_field("queen_eg", base_error, DELTA);
+        self.update_param_by_field("pawn_mg", base_error);
+        self.update_param_by_field("pawn_eg", base_error);
+        self.update_param_by_field("knight_mg", base_error);
+        self.update_param_by_field("knight_eg", base_error);
+        self.update_param_by_field("bishop_mg", base_error);
+        self.update_param_by_field("bishop_eg", base_error);
+        self.update_param_by_field("rook_mg", base_error);
+        self.update_param_by_field("rook_eg", base_error);
+        self.update_param_by_field("queen_mg", base_error);
+        self.update_param_by_field("queen_eg", base_error);
 
         // Mobility weights
-        /*self.update_param_by_field("knight_mobility_mg", base_error, DELTA);
-        self.update_param_by_field("knight_mobility_eg", base_error, DELTA);
-        self.update_param_by_field("bishop_mobility_mg", base_error, DELTA);
-        self.update_param_by_field("bishop_mobility_eg", base_error, DELTA);
-        self.update_param_by_field("rook_mobility_mg", base_error, DELTA);
-        self.update_param_by_field("rook_mobility_eg", base_error, DELTA);
-        self.update_param_by_field("queen_mobility_mg", base_error, DELTA);
-        self.update_param_by_field("queen_mobility_eg", base_error, DELTA);
-        self.update_param_by_field("king_mobility_mg", base_error, DELTA);
-        self.update_param_by_field("king_mobility_eg", base_error, DELTA);
+        /*self.update_param_by_field("knight_mobility_mg", base_error);
+        self.update_param_by_field("knight_mobility_eg", base_error);
+        self.update_param_by_field("bishop_mobility_mg", base_error);
+        self.update_param_by_field("bishop_mobility_eg", base_error);
+        self.update_param_by_field("rook_mobility_mg", base_error);
+        self.update_param_by_field("rook_mobility_eg", base_error);
+        self.update_param_by_field("queen_mobility_mg", base_error);
+        self.update_param_by_field("queen_mobility_eg", base_error);
+        self.update_param_by_field("king_mobility_mg", base_error);
+        self.update_param_by_field("king_mobility_eg", base_error);
 
         // Positional factors
-        self.update_param_by_field("king_center_mg", base_error, DELTA);
-        self.update_param_by_field("king_center_eg", base_error, DELTA);
-        self.update_param_by_field("doubled_pawn_penalty_mg", base_error, DELTA);
-        self.update_param_by_field("doubled_pawn_penalty_eg", base_error, DELTA);
-        self.update_param_by_field("isolated_pawn_penalty_mg", base_error, DELTA);
-        self.update_param_by_field("isolated_pawn_penalty_eg", base_error, DELTA);
-        self.update_param_by_field("pawn_advance_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("pawn_advance_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("passed_pawn_mg", base_error, DELTA);
-        self.update_param_by_field("passed_pawn_eg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_2_mg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_2_eg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_3_mg", base_error, DELTA); 
-        self.update_param_by_field("pp_rank_3_eg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_4_mg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_4_eg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_5_mg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_5_eg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_6_mg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_6_eg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_7_mg", base_error, DELTA);
-        self.update_param_by_field("pp_rank_7_eg", base_error, DELTA);
-        self.update_param_by_field("protected_passed_pawn_mg", base_error, DELTA);
-        self.update_param_by_field("protected_passed_pawn_eg", base_error, DELTA);
-        self.update_param_by_field("two_attackers_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("two_attackers_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("multiple_attackers_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("multiple_attackers_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("bishop_attack_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("bishop_attack_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("knight_attack_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("knight_attack_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("rook_attack_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("rook_attack_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("queen_attack_bonus_mg", base_error, DELTA);
-        self.update_param_by_field("queen_attack_bonus_eg", base_error, DELTA);
-        self.update_param_by_field("no_pawn_shield_penalty_mg", base_error, DELTA);
-        self.update_param_by_field("no_pawn_shield_penalty_eg", base_error, DELTA);
-        self.update_param_by_field("far_pawn_penalty_mg", base_error, DELTA);
-        self.update_param_by_field("far_pawn_penalty_eg", base_error, DELTA);*/
+        self.update_param_by_field("king_center_mg", base_error);
+        self.update_param_by_field("king_center_eg", base_error);
+        self.update_param_by_field("doubled_pawn_penalty_mg", base_error);
+        self.update_param_by_field("doubled_pawn_penalty_eg", base_error);
+        self.update_param_by_field("isolated_pawn_penalty_mg", base_error);
+        self.update_param_by_field("isolated_pawn_penalty_eg", base_error);
+        self.update_param_by_field("pawn_advance_bonus_mg", base_error);
+        self.update_param_by_field("pawn_advance_bonus_eg", base_error);
+        self.update_param_by_field("passed_pawn_mg", base_error);
+        self.update_param_by_field("passed_pawn_eg", base_error);
+        self.update_param_by_field("pp_rank_2_mg", base_error);
+        self.update_param_by_field("pp_rank_2_eg", base_error);
+        self.update_param_by_field("pp_rank_3_mg", base_error); 
+        self.update_param_by_field("pp_rank_3_eg", base_error);
+        self.update_param_by_field("pp_rank_4_mg", base_error);
+        self.update_param_by_field("pp_rank_4_eg", base_error);
+        self.update_param_by_field("pp_rank_5_mg", base_error);
+        self.update_param_by_field("pp_rank_5_eg", base_error);
+        self.update_param_by_field("pp_rank_6_mg", base_error);
+        self.update_param_by_field("pp_rank_6_eg", base_error);
+        self.update_param_by_field("pp_rank_7_mg", base_error);
+        self.update_param_by_field("pp_rank_7_eg", base_error);
+        self.update_param_by_field("protected_passed_pawn_mg", base_error);
+        self.update_param_by_field("protected_passed_pawn_eg", base_error);
+        self.update_param_by_field("two_attackers_bonus_mg", base_error);
+        self.update_param_by_field("two_attackers_bonus_eg", base_error);
+        self.update_param_by_field("multiple_attackers_bonus_mg", base_error);
+        self.update_param_by_field("multiple_attackers_bonus_eg", base_error);
+        self.update_param_by_field("bishop_attack_bonus_mg", base_error);
+        self.update_param_by_field("bishop_attack_bonus_eg", base_error);
+        self.update_param_by_field("knight_attack_bonus_mg", base_error);
+        self.update_param_by_field("knight_attack_bonus_eg", base_error);
+        self.update_param_by_field("rook_attack_bonus_mg", base_error);
+        self.update_param_by_field("rook_attack_bonus_eg", base_error);
+        self.update_param_by_field("queen_attack_bonus_mg", base_error);
+        self.update_param_by_field("queen_attack_bonus_eg", base_error);
+        self.update_param_by_field("no_pawn_shield_penalty_mg", base_error);
+        self.update_param_by_field("no_pawn_shield_penalty_eg", base_error);
+        self.update_param_by_field("far_pawn_penalty_mg", base_error);
+        self.update_param_by_field("far_pawn_penalty_eg", base_error);
+        
+        // King safety table (tune first 60 values)
+        for i in 0..60 {
+            let field_name = format!("king_safety_table_{}", i);
+            self.update_param_by_field(&field_name, base_error);
+        }
+        */
     }
 
     // Update single parameter by field name
-    fn update_param_by_field(&mut self, field_name: &str, base_error: f64, delta: i32) {
+    fn update_param_by_field(&mut self, field_name: &str, base_error: f64) {
         let original_value = self.get_param_value(field_name);
+        
+        // Use adaptive delta based on parameter value for better numerical stability
+        let adaptive_delta = if original_value.abs() > 10 {
+            (original_value.abs() as f64 * 0.01).max(1.0) as i32
+        } else {
+            1 // Default delta for small values
+        };
+        
         // Test positive change
-        self.set_param_value(field_name, original_value + delta);
+        self.set_param_value(field_name, original_value + adaptive_delta);
         let pos_error = self.compute_error();
         
         // Test negative change
-        self.set_param_value(field_name, original_value - delta);
+        self.set_param_value(field_name, original_value - adaptive_delta);
         let neg_error = self.compute_error();
         
         // Compute gradient
-        let gradient = (pos_error - neg_error) / (2.0 * delta as f64);
-        // Update parameter
+        let gradient = (pos_error - neg_error) / (2.0 * adaptive_delta as f64);
+        
+        // Reset to original value
+        self.set_param_value(field_name, original_value);
+        
+        // Update parameter using gradient descent with adaptive step size
+        let step_size = if original_value.abs() > 100 {
+            (gradient.abs() * self.learning_rate * 10.0) as i32
+        } else if original_value.abs() > 10 {
+            (gradient.abs() * self.learning_rate * 5.0) as i32
+        } else {
+            (gradient.abs() * self.learning_rate) as i32
+        };
+        
         let mut new_value = original_value;
-        if gradient > self.learning_rate && neg_error < base_error {
-            new_value -= 1 as i32;
-        } 
-        else if gradient < -self.learning_rate && pos_error < base_error{
-            new_value += 1 as i32;
+        if gradient > 0.0 && neg_error < pos_error {
+            new_value -= step_size.max(1);
+        } else if gradient < 0.0 && pos_error < neg_error {
+            new_value += step_size.max(1);
         }
+        
         self.set_param_value(field_name, new_value);
     }
 
     // Helper function to get parameter value by field name
     fn get_param_value(&self, field_name: &str) -> i32 {
+        if let Some(index_str) = field_name.strip_prefix("king_safety_table_") {
+            if let Ok(index) = index_str.parse::<usize>() {
+                if index < 100 {
+                    return self.params.king_safety_table[index];
+                }
+            }
+        }
         match field_name {
             "pawn_mg" => self.params.pawn_mg,
             "pawn_eg" => self.params.pawn_eg,
@@ -485,6 +533,14 @@ impl TexelTuner {
 
     // Helper function to set parameter value by field name
     fn set_param_value(&mut self, field_name: &str, value: i32) {
+        if let Some(index_str) = field_name.strip_prefix("king_safety_table_") {
+            if let Ok(index) = index_str.parse::<usize>() {
+                if index < 100 {
+                    self.params.king_safety_table[index] = value;
+                    return;
+                }
+            }
+        }
         match field_name {
             "pawn_mg" => self.params.pawn_mg = value,
             "pawn_eg" => self.params.pawn_eg = value,
@@ -603,7 +659,21 @@ impl TexelTuner {
             println!("    Score::new(0,0)");
             println!("];");
             println!("const NO_PAWN_SHIELD_PENALTY: Score = Score::new({}, {});", self.params.no_pawn_shield_penalty_mg, self.params.no_pawn_shield_penalty_eg);
-            println!("const FAR_PAWN_PENALTY: Score = Score::new({}, {});", self.params.far_pawn_penalty_mg, self.params.far_pawn_penalty_eg);     
+            println!("const FAR_PAWN_PENALTY: Score = Score::new({}, {});", self.params.far_pawn_penalty_mg, self.params.far_pawn_penalty_eg);
+            
+            println!("\n// === King Safety Table ===");
+            println!("const KING_SAFETY_TABLE: [i32; 100] = [");
+            for chunk in self.params.king_safety_table.chunks(10) {
+                print!("   ");
+                for (i, &val) in chunk.iter().enumerate() {
+                    print!(" {}", val);
+                    if i < chunk.len() - 1 {
+                        print!(",");
+                    }
+                }
+                println!(",");
+            }
+            println!("];");
     }
 }
 // Engine parameters that can be dynamically set
@@ -623,6 +693,7 @@ pub struct EngineParams {
     pub attack_weights: [Score; 8],
     pub no_pawn_shield_penalty: Score,
     pub far_pawn_penalty: Score,
+    pub king_safety_table: [i32; 100],
 }
 
 impl EngineParams {
@@ -632,53 +703,65 @@ impl EngineParams {
             piece_values: [
                 Score::new(0,0),      // Empty
                 Score::new(0,0),      // None  
-                Score::new(66,85),    // Pawn
-                Score::new(298,273),  // Knight
-                Score::new(290,320),  // Bishop
-                Score::new(456,486),  // Rook
-                Score::new(905,805),  // Queen
+                Score::new(73,109),   // Pawn
+                Score::new(306,314),  // Knight
+                Score::new(362,325),  // Bishop
+                Score::new(457,625),  // Rook
+                Score::new(1100,1010), // Queen
                 Score::new(100000,100000) // King
             ],
             mobility_values: [
                 Score::new(0,0),      // Empty slots
                 Score::new(0,0), 
                 Score::new(0,0),
-                Score::new(10,8),     // Knight
-                Score::new(10,12),    // Bishop
-                Score::new(3,6),      // Rook
-                Score::new(1,1),      // Queen (placeholder)
-                Score::new(2,5)       // King
+                Score::new(9,11),     // Knight
+                Score::new(4,10),     // Bishop
+                Score::new(4,6),      // Rook
+                Score::new(-1,12),    // Queen
+                Score::new(-11,13)    // King
             ],
-            king_center_bonus: Score::new(0,20),
-            doubled_pawn_penalty: Score::new(1,1),
-            isolated_pawn_penalty: Score::new(5,5),
-            pawn_advance_bonus: Score::new(3,3),
-            passed_pawn_base: Score::new(20,20),
+            king_center_bonus: Score::new(-18,19),
+            doubled_pawn_penalty: Score::new(3,24),
+            isolated_pawn_penalty: Score::new(12,16),
+            pawn_advance_bonus: Score::new(2,1),
+            passed_pawn_base: Score::new(-19,59),
             passed_pawn_rank_bonus: [
-                Score::new(0, 0),     // rank 0
-                Score::new(5, 5),     // rank 1  
-                Score::new(10, 10),   // rank 2
-                Score::new(20, 20),   // rank 3
-                Score::new(35, 35),   // rank 4
-                Score::new(60, 60),   // rank 5
-                Score::new(100, 100), // rank 6
-                Score::new(0, 0),     // rank 7
+                Score::new(0, 0),      // rank 0
+                Score::new(-2, -38),   // rank 1  
+                Score::new(-8, -42),   // rank 2
+                Score::new(-3, -18),   // rank 3
+                Score::new(18, 15),    // rank 4
+                Score::new(35, 92),    // rank 5
+                Score::new(19, 155),   // rank 6
+                Score::new(0, 0),      // rank 7
             ],
-            protected_passed_pawn_bonus: Score::new(10,10),
-            two_attacker_bonus: Score::new(3,0),
-            multiple_attacker_bonus: Score::new(5,0),
+            protected_passed_pawn_bonus: Score::new(26,-1),
+            two_attacker_bonus: Score::new(3,1),
+            multiple_attacker_bonus: Score::new(3,0),
             attack_weights: [
                 Score::from_single(0), // Empty slots
                 Score::from_single(0), 
                 Score::from_single(0),
-                Score::new(1,0),       // Knight
-                Score::new(1,0),       // Bishop  
-                Score::new(2,0),       // Rook
-                Score::new(4,0),       // Queen
+                Score::new(3,0),       // Knight
+                Score::new(5,0),       // Bishop  
+                Score::new(3,0),       // Rook
+                Score::new(4,3),       // Queen
                 Score::from_single(0)  // King
             ],
-            no_pawn_shield_penalty: Score::new(6,0),
-            far_pawn_penalty: Score::new(3,0),
+            no_pawn_shield_penalty: Score::new(8,0),
+            far_pawn_penalty: Score::new(2,3),
+            king_safety_table: [
+                0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
+               18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
+               68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
+              140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+              260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+              377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+              494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+              500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+              500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+              500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+            ],
         }
     }
 }
@@ -703,10 +786,41 @@ fn evaluate_fen(params: EngineParams, fen: &str) -> Result<i32, String> {
     }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Start small for testing
-    let mut tuner = TexelTuner::new("positions.txt", Some(1000000))?;
-    tuner.learning_rate = 0.0;
-    tuner.tune(500); // Just 50 epochs for testing
-    
+    use std::time::Instant;
+
+    println!("ByteChess Texel Tuner");
+    println!("=====================");
+
+    let start_time = Instant::now();
+
+    // Load training positions (adjust this number based on your dataset size and available RAM)
+    // For initial testing, start with 100k-500k positions. For final tuning, use more.
+    let positions_file = "positions.txt";
+    let max_positions = Some(500_000); // Start with 500k positions for good balance of speed vs accuracy
+
+    println!("Loading up to {} positions from {}...", max_positions.unwrap(), positions_file);
+    let mut tuner = TexelTuner::new(positions_file, max_positions)?;
+    println!("Loaded {} positions in {:.2}s", tuner.positions.len(), start_time.elapsed().as_secs_f64());
+
+    // Learning rate controls how aggressively parameters are updated
+    // Start with 0.1-0.2 for initial tuning, can be reduced as convergence approaches
+    tuner.learning_rate = 0.15;
+    println!("Learning rate: {}", tuner.learning_rate);
+
+    // Number of epochs to run
+    // Each epoch processes all parameters once
+    // Start with 100-200 epochs for initial testing, increase for final tuning
+    let epochs = 150;
+    println!("Running {} epochs...", epochs);
+
+    println!("Starting tuning process...\n");
+    let tuning_start = Instant::now();
+    tuner.tune(epochs);
+    let tuning_duration = tuning_start.elapsed();
+
+    println!("\nTuning completed in {:.2}s!", tuning_duration.as_secs_f64());
+    println!("Total time: {:.2}s", start_time.elapsed().as_secs_f64());
+    println!("Copy the parameters above into your evaluation function.");
+
     Ok(())
 }

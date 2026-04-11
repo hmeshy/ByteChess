@@ -99,7 +99,13 @@ impl TranspositionTable {
     pub fn new(size_mb: usize) -> Self {
         let entry_size = std::mem::size_of::<TTEntry>();
         let target_size_bytes = size_mb * 1024 * 1024;
-        let size = target_size_bytes / entry_size;
+        let raw_size = target_size_bytes / entry_size;
+        // `idx = hash & mask` requires power-of-two table size.
+        let size = if raw_size.is_power_of_two() {
+            raw_size
+        } else {
+            raw_size.next_power_of_two() >> 1
+        }.max(1);
         Self {
             table: vec![None; size],
             mask: size - 1,

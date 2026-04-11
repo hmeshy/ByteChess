@@ -1,16 +1,4 @@
 use crate::{board::{self, BBPiece}, tuner, util::{self, bb_gs_low_bit, Score}};
-const KING_SAFETY_TABLE: [i32; 100] = [
-    0,   0,   1,   2,   3,   5,   7,   9,  12,  15,
-   18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
-   68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
-  140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
-  260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
-  377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
-  494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
-  500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
-  500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
-  500, 500, 500, 500, 500, 500, 500, 500, 500, 500
-];
 
 pub fn evaluate(board: &board::Board, params: &tuner::EngineParams) -> i32 {
     let phase = board.phase;
@@ -333,7 +321,7 @@ fn evaluate_king_safety(board: &board::Board, is_white: bool, params: &tuner::En
     attack_units += shelter_penalty;
     
     // Convert attack units to score using safety table
-    Score::new(-KING_SAFETY_TABLE[std::cmp::min(attack_units.mg as usize, 99)], -KING_SAFETY_TABLE[std::cmp::min(attack_units.eg as usize, 99)]) // Negative because this is penalty for our king
+    Score::new(-params.king_safety_table[std::cmp::min(attack_units.mg as usize, 99)], -params.king_safety_table[std::cmp::min(attack_units.eg as usize, 99)]) // Negative because this is penalty for our king
 }
 
 fn get_king_zone(king_square: usize) -> u64 {
