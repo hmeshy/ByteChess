@@ -202,9 +202,7 @@ fn main() {
 
                 // Record the start time before move calculation
                 let start = std::time::Instant::now();
-                let reserve = std::cmp::max(30, std::cmp::min((my_time / 4) as u64, 2 * my_inc + 30));
-                let hard_limit = my_time.saturating_sub(reserve); // leave a buffer of time after every move to avoid low time in LTC, timeouts in STC
-                let think_time = std::cmp::min(my_time/20 + my_inc/2, hard_limit); // 5% of time + half increment for thinking time
+                let think_time = my_time/20 + my_inc/2; // 5% of time + half increment for thinking time
                 let m = think(&mut board, think_time, start, &mut tt, &mut mate_eval, &mut search_info, &mut pawn_tt);
                 // After move selection, update the bot's time
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -431,7 +429,7 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 eval = -minimax(board, depth - 1, depth_searched + 1, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
             }
             // Late move reduction
-            else if depth >= 3 && moves_searched > 1 
+            else if depth >= 3 && moves_searched > 1
             {
                 // Reduce the depth for later moves
                 // Zero Window Search (PVS)

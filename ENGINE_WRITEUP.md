@@ -15,6 +15,7 @@ ByteChess is a bitboard engine with:
 - Quiescence search
 - Null move pruning
 - Late move reduction (LMR)
+- Principal Variation Search
 - Aspiration windows
 - Tapered middlegame/endgame evaluation
 
@@ -151,14 +152,6 @@ This produces larger penalties as local king pressure grows.
 ### 5. King Edge Term
 
 King-edge logic evaluates each king's distance to nearest corner and uses a tuned center/corner weight.
-
-Current behavior is phase-gated:
-
-- No effect before late-game threshold.
-- Smooth ramp-in across configured late phases.
-- Fully active in deeper endgames.
-
-This keeps king-edge guidance mostly endgame-focused.
 
 ## Move Generation and Board Core
 
