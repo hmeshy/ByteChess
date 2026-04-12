@@ -43,6 +43,19 @@ const MULTIPLE_ATTACKER_BONUS: Score = Score::new(3,0); // Bonus for multiple at
 const ATTACK_WEIGHTS: [Score; 8] = [Score::from_single(0), Score::from_single(0), Score::from_single(0), Score::new(3,0), Score::new(5,0), Score::new(3,0), Score::new(4,3), Score::from_single(0)]; // Knight, Bishop, Rook, Queen
 const NO_PAWN_SHIELD_PENALTY: Score = Score::new(8,0);
 const FAR_PAWN_PENALTY: Score = Score::new(2,3);
+// MVV-LVA table indexed by [victim_piece][attacker_piece] using BBPiece indices.
+// BBPiece: White=0, Black=1, Pawn=2, Knight=3, Bishop=4, Rook=5, Queen=6, King=7
+const MVV_LVA: [[i32; 8]; 8] = [
+    // Attacker:   W  B   P   N   B   R   Q   K
+    /* Victim W */ [0, 0,  0,  0,  0,  0,  0,  0],
+    /* Victim B */ [0, 0,  0,  0,  0,  0,  0,  0],
+    /* Victim P */ [0, 0, 15, 14, 13, 12, 11, 10],
+    /* Victim N */ [0, 0, 25, 24, 23, 22, 21, 20],
+    /* Victim B */ [0, 0, 35, 34, 33, 32, 31, 30],
+    /* Victim R */ [0, 0, 45, 44, 43, 42, 41, 40],
+    /* Victim Q */ [0, 0, 55, 54, 53, 52, 51, 50],
+    /* Victim K */ [0, 0,  0,  0,  0,  0,  0,  0],
+];
 // Color Enum
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Color {
@@ -307,16 +320,7 @@ impl Move {
         // 2. Winning captures (MVV-LVA: Most Valuable Victim - Least Valuable Attacker)
         if m.flags() & MoveFlag::Capture as u8 != 0 {
             if let Some(captured) = captured_piece && let Some(attacker) = attacking_piece {
-                let victim_value = PIECE_VALUES[captured as usize].taper(0);
-                let attacker_value = PIECE_VALUES[attacker as usize].taper(0);
-                
-                // MVV-LVA scoring
-                score += 10000 + victim_value * 10 - attacker_value;
-                
-                // Bonus for capturing with less valuable pieces
-                if victim_value >= attacker_value {
-                    score += 5000; // Good capture
-                }
+                score += 9000 + MVV_LVA[captured as usize][attacker as usize];
             }
         }
         
