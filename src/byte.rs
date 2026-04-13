@@ -40,10 +40,13 @@ pub const WINDOW: i32 = 33; // Search window for aspiration
 // Key: zobrist hash of pawn structure, Value: evaluation score (i32)
 pub struct SearchInfo {
     pub killer_moves: [[util::Move; 2]; 64], // Two killer moves per depth
+    pub history: [[i16; 64]; 64], // history heuristic
     pub nodes: u64,
 }
 
 impl SearchInfo {
+    const HISTORY_MAX: i32 = 16384;
+
     pub fn new() -> Self {
         Self {
             killer_moves: [[util::Move::from_parts(
@@ -51,6 +54,7 @@ impl SearchInfo {
             0 as u8,
             util::MoveFlag::Quiet as u8,
             ); 2]; 64], // Max depth 64
+            history: [[0; 64]; 64],
             nodes: 0,
         }
     }
@@ -61,9 +65,29 @@ impl SearchInfo {
             self.killer_moves[depth][0] = mv;
         }
     }
-    
+    pub fn update_history(&mut self, from: usize, to: usize, depth_remaining: u16, qs: &[(usize, usize)]) {
+        let bonus = (depth_remaining as i32) * (depth_remaining as i32);
+        self.apply_history_delta(from, to, bonus);
+        for &(q_from, q_to) in qs {
+            self.apply_history_delta(q_from, q_to, -bonus);
+        }
+    }
+    fn apply_history_delta(&mut self, from: usize, to: usize, bonus: i32) {
+        let current = self.history[from][to] as i32;
+        let delta = bonus - current * bonus.abs() / Self::HISTORY_MAX;
+        let updated = (current + delta).clamp(-Self::HISTORY_MAX, Self::HISTORY_MAX);
+        self.history[from][to] = updated as i16;
+    }
     pub fn next_move(&mut self) {
         // Reset killer moves and history table for the next move
+        for i in 0..62 {
+            self.killer_moves[i] = self.killer_moves[i+2];
+        }
+        for i in 0..=63 {
+            for j in 0..=63 {
+                self.history[i][j] /= 2;
+            }
+        }
         self.nodes = 0; // Reset node count for the next move
     }
 }
@@ -91,7 +115,7 @@ fn main() {
     let mut pawn_tt = table::PawnTable::new(); // Initialize pawn transposition table
 
     println!("id name ByteChess");
-    println!("id author H&LM");
+    println!("id author Harrison Mesh");
     println!("uciok");
 
     for line in stdin.lock().lines() {
@@ -102,7 +126,7 @@ fn main() {
         match tokens[0] {
             "uci" => {
                 println!("id name ByteChess");
-                println!("id author H&LM");
+                println!("id author Harrison Mesh");
                 println!("option name Hash type spin default 256 min 1 max 1024");
                 println!("uciok");
             }
@@ -223,7 +247,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     tt.next_age();
     search_info.next_move();
     let mut depth = 0;    
-    let mut moves = board.get_ordered_moves(false,true, false, None, &search_info.killer_moves[0]);
+    let mut moves = board.get_ordered_moves(false,true, false, None, &search_info.killer_moves[0], &search_info.history);
     let inf = i32::MIN + 1;
     let mut alpha = inf;
     let mut best_move = moves.first().clone(); // Save the first (ordered) legal move as a placeholder
@@ -241,7 +265,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         }
     }
     while timer.elapsed().as_millis() < think_time as u128 {
-        moves = board.get_ordered_moves(false,true, false, Some(previous_best_move), &search_info.killer_moves[0]);
+        moves = board.get_ordered_moves(false,true, false, Some(previous_best_move), &search_info.killer_moves[0], &search_info.history);
         let mut local_pv = Vec::new();
         for m in moves.iter()
         {
@@ -296,6 +320,11 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         }
     }
     best_move
+}
+#[inline]
+fn is_quiet_move(mv: util::Move) -> bool {
+    let flags = mv.flags();
+    (flags & util::MoveFlag::Capture as u8) == 0 && (flags & 8) == 0
 }
 fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha: i32, beta: i32, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, pv: &mut Vec<util::Move>, search_info: &mut SearchInfo, eg: bool, pawn_tt: &mut PawnTable) -> i32 {
     search_info.nodes += 1;
@@ -382,8 +411,9 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         }
         if eval >= beta {
             board::undo_move(board);
-            if m.flags() & 8 as u8 == 0 {
+            if is_quiet_move(m) {
                 search_info.update_killer(depth_searched as usize, m);
+                search_info.update_history(m.from_square() as usize, m.to_square() as usize, depth.max(1) as u16, &[]);
             }
             pv.clear();
             pv.push(m);
@@ -409,7 +439,8 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
         } 
         board::undo_move(board);
     }
-    let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves);
+    let mut moves = board.get_ordered_moves(false, false, false, tt_best_move, &killer_moves, &search_info.history);
+    let mut quiet_searched = Vec::new();
     for (m_index, m) in moves.iter().enumerate(){
         if searched_hash_move {
             if let Some(hash_move) = tt_best_move {
@@ -452,8 +483,9 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
             }
             if eval >= beta {
                 board::undo_move(board);
-                if m.flags() & 8 as u8 == 0 {
+                if is_quiet_move(*m) {
                     search_info.update_killer(depth_searched as usize, *m);
+                    search_info.update_history(m.from_square() as usize, m.to_square() as usize, depth.max(1) as u16, &quiet_searched);
                 }
                 pv.clear();
                 pv.push(*m);
@@ -476,6 +508,9 @@ fn minimax(board: &mut board::Board, depth: i32, depth_searched: i32, mut alpha:
                 best_pv.clear();
                 best_pv.push(*m);
                 best_pv.extend(child_pv);
+            }
+            if is_quiet_move(*m) {
+                quiet_searched.push((m.from_square() as usize, m.to_square() as usize));
             }
             moves_searched += 1;
         }
@@ -516,7 +551,7 @@ fn minimax_captures(board: &mut board::Board, depth_searched: i32, mut alpha: i3
         0 as u8,
         0 as u8,
         util::MoveFlag::Quiet as u8,
-        ); 2]);
+        ); 2], &search_info.history);
     if depth_searched <= 2 * depth && moves.len() != 0
     {
         for m in moves.iter(){
