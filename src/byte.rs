@@ -9,7 +9,8 @@ use std::io::Write;
 use crate::magic::ROOK_MAGICS;
 use crate::table::PawnTable;
 use crate::table::{TranspositionTable, TTEntry, Bound};
-use util::Score;
+use crate::util::Move;
+use util::{Score, MoveStack};
 mod board;
 mod util;
 mod magic;
@@ -35,7 +36,7 @@ pub const MOBILITY_VALUES: [Score; 8] = [
     Score::new(-1, 12), // Queen
     Score::new(-11, 13), // King
 ];
-pub const WINDOW: i32 = 33; // Search window for aspiration
+pub const WINDOW: [i32; 3] = [25, 100, 400];
 // A simple pawn transposition table using a hash map.
 // Key: zobrist hash of pawn structure, Value: evaluation score (i32)
 pub struct SearchInfo {
@@ -248,7 +249,7 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     search_info.next_move();
     let mut depth = 0;    
     let mut moves = board.get_ordered_moves(false,true, false, None, &search_info.killer_moves[0], &search_info.history);
-    let inf = i32::MIN + 1;
+    let inf: i32 = i32::MIN + 1;
     let mut alpha = inf;
     let mut best_move = moves.first().clone(); // Save the first (ordered) legal move as a placeholder
     if moves.len() == 1 { // If there's only one possible move, return it immediately
@@ -266,40 +267,32 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
     }
     while timer.elapsed().as_millis() < think_time as u128 {
         moves = board.get_ordered_moves(false,true, false, Some(previous_best_move), &search_info.killer_moves[0], &search_info.history);
-        let mut local_pv = Vec::new();
-        for m in moves.iter()
-        {
-            board::make_move(board,&m);
-            let mut child_pv = Vec::new();
-            let mut eval = -minimax(board, depth, 0, -prev_eval-WINDOW, -prev_eval+WINDOW, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
-            if eval <= prev_eval - WINDOW || eval >= prev_eval + WINDOW {
-                // If the evaluation is outside the window, we need to re-search with a wider window
-                eval = -minimax(board, depth, 0, alpha, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+        let mut root_info: (Move, i32, Vec<Move>) = (best_move, 0, vec![best_move]);
+        let mut exact_eval = false;
+        let mut i = 0;
+        let mut j = 0;
+        while (!exact_eval && i < 4 && j < 4 && timer.elapsed().as_millis() < think_time as u128) {
+            let low  = if i > 2 { alpha } else { prev_eval - WINDOW[i] };
+            let high = if j > 2 { -alpha } else { prev_eval + WINDOW[j] };
+            root_info = think_eval(board, think_time, timer, tt, mate_eval, search_info, eg, pawn_tt, low, high, depth, moves);
+            if root_info.1 <= low {
+                i += 1;
             }
-            /*println!(
-            "info move_ {} depth {} val {} nodes {}",
-            m, depth, eval, search_info.nodes,
-         );*/
-            if timer.elapsed().as_millis() > think_time as u128 {
-                // Time is up, break the loop
-                if alpha == i32::MIN + 1 {
-                    // A new alpha value was never set
-                    alpha = prev_eval; // Use the previous evaluation
-                }
-                break;
+            else if root_info.1 >= high {
+                j += 1;
             }
-            if eval > alpha {
-                alpha = eval;
-                best_move = m.clone();
-                local_pv.clear();
-                local_pv.push(m.clone());
-                local_pv.extend(child_pv)
+            else {
+                exact_eval = true;
             }
-            board::undo_move(board);
         }
-        pv = local_pv;
+        pv = root_info.2;
+        best_move = root_info.0;
+        alpha = root_info.1;
+        if alpha == i32::MIN + 1 {
+            alpha = prev_eval;
+        }
         let pv_string = pv.iter().map(|mv| format!("{}", mv)).collect::<Vec<_>>().join(" ");
-        let elapsed = timer.elapsed().as_millis(); // <-- Add this line
+        let elapsed = timer.elapsed().as_millis(); 
         println!(
             "info score cp {} depth {} nodes {} time {} pv {} move {}",
             alpha, depth, search_info.nodes, elapsed, pv_string, best_move
@@ -320,6 +313,49 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         }
     }
     best_move
+}
+fn think_eval(board: &mut board::Board, think_time: u64, timer: std::time::Instant, tt: &mut TranspositionTable, mate_eval: &mut i32, search_info: &mut SearchInfo, eg: bool, pawn_tt: &mut PawnTable, a: i32, beta: i32, depth: i32, moves: MoveStack) -> (util::Move, i32, Vec<util::Move>) {
+    let mut best_move = moves.first().clone();
+    let mut local_pv = Vec::new();
+    let mut alpha  = a;
+    for (idx, m) in moves.iter().enumerate()
+        {
+            board::make_move(board,&m);
+            let mut child_pv = Vec::new();
+            let mut i = 0;
+            let mut j = 0;
+            let mut eval;
+            if idx == 0 {
+                // alpha not set, full window search
+                eval = -minimax(board, depth, 0, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+            }
+            else if depth >= 3 && idx >= 2 {
+                eval = -minimax(board, depth-1, 0, -alpha-1, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                if eval > alpha && eval < beta && timer.elapsed().as_millis() < think_time as u128 { // still beats it, do full window
+                    eval = -minimax(board, depth,  0, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                }
+            }
+            else {
+                eval = -minimax(board, depth, 0, -alpha-1, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                if eval > alpha && eval < beta && timer.elapsed().as_millis() < think_time as u128 { // still beats it, do full window
+                    eval = -minimax(board, depth,  0, -beta, -alpha, think_time, timer, tt, &mut child_pv, search_info, eg, pawn_tt);
+                }
+            }
+            
+            if timer.elapsed().as_millis() > think_time as u128 {
+                board::undo_move(board);
+                break;
+            }
+            if eval > alpha {
+                alpha = eval;
+                best_move = m.clone();
+                local_pv.clear();
+                local_pv.push(m.clone());
+                local_pv.extend(child_pv)
+            }
+            board::undo_move(board);
+        }
+        (best_move, alpha, local_pv)
 }
 #[inline]
 fn is_quiet_move(mv: util::Move) -> bool {
