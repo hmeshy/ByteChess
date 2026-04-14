@@ -410,6 +410,7 @@ pub(crate) fn piece_to_fen(piece: BBPiece, color: Color) -> char {
 pub fn board_from_fen(fen: &str) -> board::Board {
     use crate::board::{Board, BBPiece};
     let mut bitboards = [0u64; 8];
+    let mut piece_on: [Option<BBPiece>; 64] = [None; 64];
     let mut piece_moves = [0u32; 8];
     let mut castling_rights = [false; 4];
     let mut en_passant = None;
@@ -427,18 +428,18 @@ pub fn board_from_fen(fen: &str) -> board::Board {
         match c {
             '/' => sq -= 16,
             '1'..='8' => sq += c.to_digit(10).unwrap() as usize,
-            'P' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Pawn as usize]; }
-            'N' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Knight as usize];}
-            'B' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Bishop as usize];}
-            'R' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Rook as usize];}
-            'Q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::Queen as usize];}
-            'K' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; sq += 1; material_score += PIECE_VALUES[BBPiece::King as usize];}
-            'p' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Pawn as usize];}
-            'n' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Knight as usize];}
-            'b' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Bishop as usize];}
-            'r' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Rook as usize];}
-            'q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::Queen as usize];}
-            'k' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; sq += 1; material_score -= PIECE_VALUES[BBPiece::King as usize];}
+            'P' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Pawn); sq += 1; material_score += PIECE_VALUES[BBPiece::Pawn as usize]; }
+            'N' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Knight); sq += 1; material_score += PIECE_VALUES[BBPiece::Knight as usize];}
+            'B' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Bishop); sq += 1; material_score += PIECE_VALUES[BBPiece::Bishop as usize];}
+            'R' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Rook); sq += 1; material_score += PIECE_VALUES[BBPiece::Rook as usize];}
+            'Q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Queen); sq += 1; material_score += PIECE_VALUES[BBPiece::Queen as usize];}
+            'K' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::White as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::King); sq += 1; material_score += PIECE_VALUES[BBPiece::King as usize];}
+            'p' => { bitboards[BBPiece::Pawn as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Pawn); sq += 1; material_score -= PIECE_VALUES[BBPiece::Pawn as usize];}
+            'n' => { bitboards[BBPiece::Knight as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Knight); sq += 1; material_score -= PIECE_VALUES[BBPiece::Knight as usize];}
+            'b' => { bitboards[BBPiece::Bishop as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Bishop); sq += 1; material_score -= PIECE_VALUES[BBPiece::Bishop as usize];}
+            'r' => { bitboards[BBPiece::Rook as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Rook); sq += 1; material_score -= PIECE_VALUES[BBPiece::Rook as usize];}
+            'q' => { bitboards[BBPiece::Queen as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::Queen); sq += 1; material_score -= PIECE_VALUES[BBPiece::Queen as usize];}
+            'k' => { bitboards[BBPiece::King as usize] |= 1 << sq; bitboards[BBPiece::Black as usize] |= 1 << sq; piece_on[sq] = Some(BBPiece::King); sq += 1; material_score -= PIECE_VALUES[BBPiece::King as usize];}
             _ => {}
         }
     }
@@ -1024,7 +1025,7 @@ fn evaluate_pawn_shelter(board: &board::Board, king_square: usize, is_white: boo
 
 pub fn perft(bd: &mut board::Board, depth: u8) -> u64 {
     let mut count = 0;
-    bd.gen_moves(true);
+    bd.gen_moves(true, false);
     let moves = bd.moves;
     if depth <= 1
     {

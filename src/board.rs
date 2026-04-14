@@ -557,10 +557,7 @@ fn bishop_attacks(square: usize, occupancy: u64) -> u64
 impl Board {
     pub fn get_ordered_moves(&mut self, is_generated: bool, legal_only: bool, captures_only: bool, tt_move: Option<util::Move>, killer_moves: &[util::Move; 2], history: &[[i16; 64]; 64]) -> util::MoveStack {
         if !is_generated{
-        self.gen_moves(legal_only);}
-        if captures_only {
-            self.captures_only();
-        }
+        self.gen_moves(legal_only, captures_only);}
         let mut _moves = self.moves;
         if captures_only
         {
@@ -656,7 +653,7 @@ impl Board {
     fn calculate_phase(&mut self) {
         self.phase = ((self.phase_count * 255 + TOTAL_PHASE/2)/TOTAL_PHASE) as u8; 
     }
-    pub fn gen_moves(&mut self, legal_only: bool) {
+    pub fn gen_moves(&mut self, legal_only: bool, captures_only: bool) {
         self.moves.clear();
         let white = self.move_color == Color::White as i8;
         let color_bb: BBPiece = if white {
@@ -695,7 +692,7 @@ impl Board {
                             // Right en passant: pawn must be on the file to the left of ep_sq and able to capture right
                             en_passant_right = ((pc_bb & not_h_file) << 9) & ep_bb;
                         }   
-                        while single_push != 0
+                        while single_push != 0 && !captures_only // pawn pushes are never captures
                         {
                             let to_sq = util::bb_gs_low_bit(&mut single_push) as u8;
                             if to_sq >= 56 // first or last rank
@@ -730,7 +727,7 @@ impl Board {
                             }
 
                         }
-                        while double_push != 0
+                        while double_push != 0 && !captures_only
                         {
                             let to_sq = util::bb_gs_low_bit(&mut double_push) as u8;
                             self.add_move(&Move::from_parts(
@@ -840,7 +837,7 @@ impl Board {
                             // Right en passant: pawn must be on the file to the left of ep_sq and able to capture right
                             en_passant_right = ((pc_bb & not_a_file) >> 9) & ep_bb;
                         }   
-                        while single_push != 0
+                        while single_push != 0 && !captures_only
                         {
                             let to_sq = util::bb_gs_low_bit(&mut single_push) as u8;
                             if to_sq <= 7 // first or last rank
@@ -875,7 +872,7 @@ impl Board {
                             }
 
                         }
-                        while double_push != 0
+                        while double_push != 0 && !captures_only
                         {
                             let to_sq = util::bb_gs_low_bit(&mut double_push) as u8;
                             self.add_move(&Move::from_parts(
@@ -983,13 +980,21 @@ impl Board {
                                     let mut flags = MoveFlag::Quiet as u8;
                                     if util::bb_get(self.bitboards[1-(color_bb as usize)], move_square as usize) {
                                         flags = MoveFlag::Capture as u8; // Capture if opponent piece
-                                    }
-                                    self.add_move(&Move::from_parts(
+                                        self.add_move(&Move::from_parts(
                                         _square as u8,
                                         move_square as u8,
                                         flags,
-                                    ), legal_only);
+                                        ), legal_only);
+                                    }
+                                    else if (!captures_only) {
+                                        self.add_move(&Move::from_parts(
+                                            _square as u8,
+                                            move_square as u8,
+                                            flags,
+                                        ), legal_only);
+                                    }
                                     move_square = util::bb_gs_low_bit(&mut attacks);
+                                    
                                 }
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
@@ -999,7 +1004,7 @@ impl Board {
                     // Queen move gen but just diagonals
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        self.gen_sliding_moves(_square as usize, legal_only, false, true);
+                        self.gen_sliding_moves(_square as usize, legal_only, captures_only, false, true);
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
@@ -1008,7 +1013,7 @@ impl Board {
                     // Queen move gen but just horizontals
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        self.gen_sliding_moves(_square as usize, legal_only, true, false);
+                        self.gen_sliding_moves(_square as usize, legal_only, captures_only, true, false);
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
@@ -1019,7 +1024,7 @@ impl Board {
                     // If hitting a piece, check if it's an opponent piece to capture
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     while _square != 64 {
-                        self.gen_sliding_moves(_square as usize, legal_only, true, true);
+                        self.gen_sliding_moves(_square as usize, legal_only, captures_only, true, true);
                         _square = util::bb_gs_low_bit(&mut pc_bb);
                     }
                 }
@@ -1027,26 +1032,28 @@ impl Board {
                     // Generate king moves
                     let mut _square = util::bb_gs_low_bit(&mut pc_bb);
                     // If castling rights exist, check if no pieces are in between the king and rook
-                    if self.move_color == Color::White as i8 {
-                        if self.castling_rights[0] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::F1 as usize) && !util::bb_get(combined_bb, Squares::G1 as usize) {
-                            // King-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::G1 as u8, MoveFlag::KingCastle as u8), legal_only);
-                        }
-                        if self.castling_rights[1] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::D1 as usize) && !util::bb_get(combined_bb, Squares::C1 as usize) && !util::bb_get(combined_bb, Squares::B1 as usize) {
-                            // Queen-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::C1 as u8, MoveFlag::QueenCastle as u8), legal_only);
-                        }
-                    } else {
-                        if self.castling_rights[2] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::F8 as usize) && !util::bb_get(combined_bb, Squares::G8 as usize) {
-                            // King-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::G8 as u8, MoveFlag::KingCastle as u8), legal_only);
-                        }
-                        if self.castling_rights[3] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::D8 as usize) && !util::bb_get(combined_bb, Squares::C8 as usize) && !util::bb_get(combined_bb, Squares::B8 as usize) {
-                            // Queen-side castle
-                            self.add_move(&Move::from_parts(_square as u8, Squares::C8 as u8, MoveFlag::QueenCastle as u8), legal_only);
+                    if !captures_only {
+                        if self.move_color == Color::White as i8 {
+                            if self.castling_rights[0] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::F1 as usize) && !util::bb_get(combined_bb, Squares::G1 as usize) {
+                                // King-side castle
+                                self.add_move(&Move::from_parts(_square as u8, Squares::G1 as u8, MoveFlag::KingCastle as u8), legal_only);
+                            }
+                            if self.castling_rights[1] && _square == Squares::E1 as usize && !util::bb_get(combined_bb, Squares::D1 as usize) && !util::bb_get(combined_bb, Squares::C1 as usize) && !util::bb_get(combined_bb, Squares::B1 as usize) {
+                                // Queen-side castle
+                                self.add_move(&Move::from_parts(_square as u8, Squares::C1 as u8, MoveFlag::QueenCastle as u8), legal_only);
+                            }
+                        } else {
+                            if self.castling_rights[2] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::F8 as usize) && !util::bb_get(combined_bb, Squares::G8 as usize) {
+                                // King-side castle
+                                self.add_move(&Move::from_parts(_square as u8, Squares::G8 as u8, MoveFlag::KingCastle as u8), legal_only);
+                            }
+                            if self.castling_rights[3] && _square == Squares::E8 as usize && !util::bb_get(combined_bb, Squares::D8 as usize) && !util::bb_get(combined_bb, Squares::C8 as usize) && !util::bb_get(combined_bb, Squares::B8 as usize) {
+                                // Queen-side castle
+                                self.add_move(&Move::from_parts(_square as u8, Squares::C8 as u8, MoveFlag::QueenCastle as u8), legal_only);
+                            }
                         }
                     }
-                    while _square != 64 {
+                        while _square != 64 {
                         // Generate king moves
                         let mut attacks = KING_ATTACKS[_square] & !self.bitboards[color_bb as usize];
                         let mut move_square = util::bb_gs_low_bit(&mut attacks);
@@ -1054,12 +1061,19 @@ impl Board {
                                     let mut flags = MoveFlag::Quiet as u8;
                                     if util::bb_get(self.bitboards[1-(color_bb as usize)], move_square as usize) {
                                         flags = MoveFlag::Capture as u8; // Capture if opponent piece
-                                    }
-                                    self.add_move(&Move::from_parts(
+                                        self.add_move(&Move::from_parts(
                                         _square as u8,
                                         move_square as u8,
                                         flags,
-                                    ), legal_only);
+                                        ), legal_only);
+                                    }
+                                    else if !captures_only {
+                                        self.add_move(&Move::from_parts(
+                                            _square as u8,
+                                            move_square as u8,
+                                            flags,
+                                        ), legal_only);
+                                    }
                                     move_square = util::bb_gs_low_bit(&mut attacks);
                                 }
                         _square = util::bb_gs_low_bit(&mut pc_bb);
@@ -1069,7 +1083,7 @@ impl Board {
             }
         }
     }
-    fn gen_sliding_moves(&mut self, idx: usize, legal_only: bool, orth: bool, diag: bool) {
+    fn gen_sliding_moves(&mut self, idx: usize, legal_only: bool, captures_only: bool, orth: bool, diag: bool) {
         let color_bb: BBPiece = if self.move_color == Color::White as i8 {
             BBPiece::White
         } else {
@@ -1099,7 +1113,9 @@ impl Board {
             } else {
                 MoveFlag::Quiet as u8
             };
-            self.add_move(&Move::from_parts(idx as u8, to as u8, flag), legal_only);
+            if flag == MoveFlag::Capture as u8 || !captures_only {
+                self.add_move(&Move::from_parts(idx as u8, to as u8, flag), legal_only);
+            }
             targets_bb &= targets_bb - 1; // Clear the lowest set bit
         }
     }

@@ -174,7 +174,7 @@ fn main() {
                 // Play moves if present
                 if let Some(moves_idx) = tokens.iter().position(|&s| s == "moves") {
                     for mv in &tokens[moves_idx + 1..] {
-                        board.gen_moves(false); //we can trust the move to compare against to be legal!
+                        board.gen_moves(false, false); //we can trust the move to compare against to be legal!
                         let legal_moves = board.moves;
                         let found = legal_moves.iter().find(|m| format!("{}", m) == *mv);
                         if let Some(m) = found {
