@@ -742,7 +742,7 @@ fn king_distance_to_corner(board: &board::Board, is_white: bool) -> i32 {
         min_distance = min_distance.min(distance);
     }
     
-    min_distance
+    min_distance.max(1) // avoid giving a big boost to corner king
 }
 pub fn print_eval(board: &board::Board) {
     let phase = board.phase;
@@ -780,16 +780,33 @@ fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bo
         let square = bb_gs_low_bit(&mut bitboard);
         let rank = (square / 8) as u8;
         let file = (square % 8) as usize;
-        
+        // Mirror to "own side" so white/black are symmetric for some bonuses
+        let own_rank = if is_white { rank } else { 7 - rank };
+
+        let mg_bonus = match (own_rank, file) {
+            (2, 2..=5) => 1,           // c3 d3 e3 f3
+            (3, 2) | (3, 5) => 1,      // c4 f4
+            (3, 3) | (3, 4) => 2,      // d4 e4
+            (4, 3) | (4, 4) => 1,      // d5 e5
+            _ => 0,
+        };
+        score += Score::new(mg_bonus,0);
+
+
         pawns_per_file[file] += 1;
         pawn_positions.push((square, rank, file));
 
         // Pawn advancement bonus =
-        let advancement = if is_white {
-            2_i32.pow((rank as u32).saturating_sub(1))
+        let mut advancement = if is_white {
+            2_i32.pow((rank as u32).saturating_sub(1)) - 1
         } else {
-            2_i32.pow((6u32).saturating_sub(rank as u32))
+            2_i32.pow((6u32).saturating_sub(rank as u32)) - 1
         };
+        if file == 0 || file == 7 { // do not encourage flank pawn pushes
+            if own_rank == 2 || own_rank == 3 {
+                advancement = 0;
+            }
+        }
         score += PAWN_ADVANCE_BONUS * (advancement as i32);
     }
     

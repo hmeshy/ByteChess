@@ -1277,8 +1277,11 @@ impl Board {
         
         // Process each piece type once
         for piece_type in 3..8 { // Knight=3, Bishop=4, Rook=5, Queen=6, King=7
-            let mobility_weight = MOBILITY_VALUES[piece_type];
-            
+            let mut mobility_weight = MOBILITY_VALUES[piece_type];
+            if piece_type == BBPiece::King as usize {
+                let current = mobility_weight.taper(self.phase).max(-5); // king safety in opening is a bit overblown
+                mobility_weight = Score::new(current, current);
+            }
             // White pieces
             let mut white_piece_bb = self.bitboards[piece_type] & white_pieces;
             while white_piece_bb != 0 {

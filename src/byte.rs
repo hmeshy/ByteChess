@@ -288,11 +288,11 @@ fn think(board: &mut board::Board, think_time: u64, timer: std::time::Instant, t
         pv = root_info.2;
         best_move = root_info.0;
         alpha = root_info.1;
-        if alpha == i32::MIN + 1 {
-            alpha = prev_eval;
-        }
         let pv_string = pv.iter().map(|mv| format!("{}", mv)).collect::<Vec<_>>().join(" ");
         let elapsed = timer.elapsed().as_millis(); 
+        if elapsed >= think_time as u128 {
+            alpha = prev_eval
+        }
         println!(
             "info score cp {} depth {} nodes {} time {} pv {} move {}",
             alpha, depth, search_info.nodes, elapsed, pv_string, best_move

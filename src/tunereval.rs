@@ -113,6 +113,22 @@ fn pawn_struct_score(board: &board::Board, params: &tuner::EngineParams) -> Scor
     let black_pawns = board.combined([BBPiece::Pawn, BBPiece::Black], true);
     pawn_evaluation(board, white_pawns, black_pawns, true, params) - pawn_evaluation(board, black_pawns, white_pawns, false, params)
 }
+fn pawn_square_bonus(square: usize, is_white: bool) -> Score {
+    // Map to "own side" orientation so white/black share the same PST intent.
+    let oriented_square = if is_white { square } else { square ^ 56 };
+    let rank = oriented_square / 8;
+    let file = oriented_square % 8;
+
+    let mg = match (rank, file) {
+        (2, 2..=5) => 2,   // c3 d3 e3 f3
+        (3, 2) | (3, 5) => 4, // c4 f4
+        (3, 3) | (3, 4) => 6, // d4 e4
+        (4, 3) | (4, 4) => 4, // d5 e5
+        _ => 0,
+    };
+
+    Score::new(mg, 0)
+}
 fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bool, params: &tuner::EngineParams) -> Score {
     if pawn_bb == 0 {
         return Score::new(0,0);
@@ -131,6 +147,7 @@ fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bo
         
         pawns_per_file[file] += 1;
         pawn_positions.push((square, rank, file));
+        score += pawn_square_bonus(square, is_white);
 
         // Pawn advancement bonus =
         let advancement = if is_white {
