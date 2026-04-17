@@ -1274,28 +1274,43 @@ impl Board {
         let blockers = self.combined([BBPiece::White, BBPiece::Black], false);
         let white_pieces = self.bitboards[BBPiece::White as usize];
         let black_pieces = self.bitboards[BBPiece::Black as usize];
-        
+        let own_king_w = self.bitboards[BBPiece::King as usize] & white_pieces;
+        let own_king_b = self.bitboards[BBPiece::King as usize] & black_pieces;
+
         // Process each piece type once
         for piece_type in 3..8 { // Knight=3, Bishop=4, Rook=5, Queen=6, King=7
             let mut mobility_weight = MOBILITY_VALUES[piece_type];
             if piece_type == BBPiece::King as usize {
-                let current = mobility_weight.taper(self.phase).max(-5); // king safety in opening is a bit overblown
+                let current = mobility_weight.taper(self.phase).max(-3); // king safety in opening is a bit overblown
                 mobility_weight = Score::new(current, current);
+
+                if own_king_w != 0 {
+                    let king_sq_w = own_king_w.trailing_zeros() as usize;
+                    let king_mob_w = (KING_ATTACKS[king_sq_w] & !white_pieces).count_ones() as i32;
+                    white_mobility += mobility_weight * king_mob_w;
+                }
+                if own_king_b != 0 {
+                    let king_sq_b = own_king_b.trailing_zeros() as usize;
+                    let king_mob_b = (KING_ATTACKS[king_sq_b] & !black_pieces).count_ones() as i32;
+                    black_mobility += mobility_weight * king_mob_b;
+                }
             }
-            // White pieces
-            let mut white_piece_bb = self.bitboards[piece_type] & white_pieces;
-            while white_piece_bb != 0 {
-                let square = util::bb_gs_low_bit(&mut white_piece_bb);
-                let mobility_count = self.get_mobility_count(piece_type, square, blockers, white_pieces);
-                white_mobility += mobility_weight * mobility_count as i32;
-            }
-            
-            // Black pieces  
-            let mut black_piece_bb = self.bitboards[piece_type] & black_pieces;
-            while black_piece_bb != 0 {
-                let square = util::bb_gs_low_bit(&mut black_piece_bb);
-                let mobility_count = self.get_mobility_count(piece_type, square, blockers, black_pieces);
-                black_mobility += mobility_weight * mobility_count as i32;
+            else {
+                // White pieces
+                let mut white_piece_bb = self.bitboards[piece_type] & white_pieces;
+                while white_piece_bb != 0 {
+                    let square = util::bb_gs_low_bit(&mut white_piece_bb);
+                    let mobility_count = self.get_mobility_count(piece_type, square, blockers & !own_king_w, white_pieces & !own_king_w);
+                    white_mobility += mobility_weight * mobility_count as i32;
+                }
+                
+                // Black pieces  
+                let mut black_piece_bb = self.bitboards[piece_type] & black_pieces;
+                while black_piece_bb != 0 {
+                    let square = util::bb_gs_low_bit(&mut black_piece_bb);
+                    let mobility_count = self.get_mobility_count(piece_type, square, blockers & !own_king_b, black_pieces & !own_king_b);
+                    black_mobility += mobility_weight * mobility_count as i32;
+                }
             }
         }
         

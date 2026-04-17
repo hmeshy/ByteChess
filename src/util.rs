@@ -783,15 +783,6 @@ fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bo
         // Mirror to "own side" so white/black are symmetric for some bonuses
         let own_rank = if is_white { rank } else { 7 - rank };
 
-        let mg_bonus = match (own_rank, file) {
-            (2, 2..=5) => 1,           // c3 d3 e3 f3
-            (3, 2) | (3, 5) => 1,      // c4 f4
-            (3, 3) | (3, 4) => 2,      // d4 e4
-            (4, 3) | (4, 4) => 1,      // d5 e5
-            _ => 0,
-        };
-        score += Score::new(mg_bonus,0);
-
 
         pawns_per_file[file] += 1;
         pawn_positions.push((square, rank, file));
@@ -802,10 +793,8 @@ fn pawn_evaluation(board: &board::Board, pawn_bb: u64, opp_bb: u64, is_white: bo
         } else {
             2_i32.pow((6u32).saturating_sub(rank as u32)) - 1
         };
-        if file == 0 || file == 7 { // do not encourage flank pawn pushes
-            if own_rank == 2 || own_rank == 3 {
-                advancement = 0;
-            }
+        if file == 0 || file == 7 { // encourage flank pawn pushes less
+            advancement /= 2;
         }
         score += PAWN_ADVANCE_BONUS * (advancement as i32);
     }
